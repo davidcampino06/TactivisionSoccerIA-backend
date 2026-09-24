@@ -10,7 +10,11 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = {
+    "http://localhost:5173",
+    "https://tactivision-frontend.onrender.com"
+})
+
 public class HelloController {
 
     private final JdbcTemplate jdbcTemplate;
