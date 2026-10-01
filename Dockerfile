@@ -1,12 +1,12 @@
-FROM eclipse-temurin:26-jdk
+FROM python:3.13-slim
 
 WORKDIR /app
 
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
 COPY . .
 
-RUN chmod +x mvnw
-RUN ./mvnw clean package -DskipTests
+EXPOSE 8000
 
-EXPOSE 8080
-
-CMD ["java", "-jar", "target/tactivision-backend-0.0.1-SNAPSHOT.jar"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
