@@ -1,0 +1,172 @@
+"""Data structures used by the backend, each one for a concrete need.
+
+- Array (Python list / NumPy in the AI Service): ordered, indexed collections such as
+  frames, detections and indicator values.
+- Stack (LIFO):  version history of a tactical play -> "undo" goes back to the previous version.
+- Queue (FIFO):  pending video analyses -> processed in arrival order, one at a time.
+- DoublyLinkedList: chronological match timeline -> each match knows its previous and next
+  match, used for team evolution (deltas between consecutive matches) and navigation.
+"""
+
+from __future__ import annotations
+
+import threading
+from collections import deque
+from collections.abc import Iterator
+from dataclasses import dataclass
+from typing import Generic, TypeVar
+
+T = TypeVar("T")
+
+
+class EmptyStructureError(IndexError):
+    """Raised when reading from an empty stack or queue."""
+
+
+class Stack(Generic[T]):
+    """LIFO stack backed by a dynamic array (Python list)."""
+
+    def __init__(self, items: list[T] | None = None) -> None:
+        self._items: list[T] = list(items or [])
+
+    def push(self, item: T) -> None:
+        self._items.append(item)
+
+    def pop(self) -> T:
+        if not self._items:
+            raise EmptyStructureError("pop from empty stack")
+        return self._items.pop()
+
+    def peek(self) -> T:
+        if not self._items:
+            raise EmptyStructureError("peek from empty stack")
+        return self._items[-1]
+
+    def is_empty(self) -> bool:
+        return not self._items
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+
+class Queue(Generic[T]):
+    """Thread-safe FIFO queue. ``get`` blocks until an item is available."""
+
+    def __init__(self) -> None:
+        self._items: deque[T] = deque()
+        self._condition = threading.Condition()
+
+    def enqueue(self, item: T) -> int:
+        """Add an item and return its position (1 = next to be processed)."""
+        with self._condition:
+            self._items.append(item)
+            self._condition.notify()
+            return len(self._items)
+
+    def dequeue(self, timeout: float | None = None) -> T:
+        with self._condition:
+            if not self._condition.wait_for(lambda: bool(self._items), timeout=timeout):
+                raise EmptyStructureError("dequeue timed out on empty queue")
+            return self._items.popleft()
+
+    def position_of(self, item: T) -> int | None:
+        with self._condition:
+            for index, queued in enumerate(self._items):
+                if queued == item:
+                    return index + 1
+        return None
+
+    def remove(self, item: T) -> bool:
+        with self._condition:
+            try:
+                self._items.remove(item)
+                return True
+            except ValueError:
+                return False
+
+    def is_empty(self) -> bool:
+        with self._condition:
+            return not self._items
+
+    def __len__(self) -> int:
+        with self._condition:
+            return len(self._items)
+
+
+@dataclass
+class _Node(Generic[T]):
+    value: T
+    previous: "_Node[T] | None" = None
+    next: "_Node[T] | None" = None
+
+
+class DoublyLinkedList(Generic[T]):
+    """Doubly linked list with O(1) append/prepend and bidirectional traversal."""
+
+    def __init__(self) -> None:
+        self._head: _Node[T] | None = None
+        self._tail: _Node[T] | None = None
+        self._size = 0
+
+    def append(self, value: T) -> _Node[T]:
+        node = _Node(value, previous=self._tail)
+        if self._tail:
+            self._tail.next = node
+        else:
+            self._head = node
+        self._tail = node
+        self._size += 1
+        return node
+
+    def prepend(self, value: T) -> _Node[T]:
+        node = _Node(value, next=self._head)
+        if self._head:
+            self._head.previous = node
+        else:
+            self._tail = node
+        self._head = node
+        self._size += 1
+        return node
+
+    def remove(self, node: _Node[T]) -> None:
+        if node.previous:
+            node.previous.next = node.next
+        else:
+            self._head = node.next
+        if node.next:
+            node.next.previous = node.previous
+        else:
+            self._tail = node.previous
+        node.previous = node.next = None
+        self._size -= 1
+
+    def find(self, predicate) -> _Node[T] | None:
+        current = self._head
+        while current:
+            if predicate(current.value):
+                return current
+            current = current.next
+        return None
+
+    @property
+    def head(self) -> _Node[T] | None:
+        return self._head
+
+    @property
+    def tail(self) -> _Node[T] | None:
+        return self._tail
+
+    def __iter__(self) -> Iterator[T]:
+        current = self._head
+        while current:
+            yield current.value
+            current = current.next
+
+    def reversed(self) -> Iterator[T]:
+        current = self._tail
+        while current:
+            yield current.value
+            current = current.previous
+
+    def __len__(self) -> int:
+        return self._size
