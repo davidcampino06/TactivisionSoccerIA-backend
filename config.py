@@ -1,0 +1,91 @@
+"""Backend configuration loaded from environment variables (never hard-coded secrets)."""
+
+from __future__ import annotations
+
+import logging
+import os
+import secrets
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from dotenv import load_dotenv
+from sqlalchemy.engine import make_url
+
+load_dotenv()
+logger = logging.getLogger("tactivision.config")
+
+DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,https://tactivision-frontend.onrender.com"
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value in (None, ""):
+        return default
+    return raw_value.strip().lower() in ("1", "true", "yes", "on")
+
+
+def resolve_database_url() -> str | None:
+    """Build the SQLAlchemy URL.
+
+    Supports both styles found in the project:
+    - DATABASE_URL=postgresql://user:password@host/db?sslmode=require   (preferred)
+    - NEON_DB_URL + NEON_DB_USERNAME + NEON_DB_PASSWORD                  (current Render setup)
+    A leftover ``jdbc:`` prefix from the old Spring Boot configuration is removed.
+    """
+    raw_url = os.getenv("DATABASE_URL") or os.getenv("NEON_DB_URL")
+    if not raw_url:
+        return None
+    raw_url = raw_url.strip().removeprefix("jdbc:")
+    if raw_url.startswith("postgres://"):
+        raw_url = "postgresql://" + raw_url[len("postgres://"):]
+    if raw_url.startswith("postgresql://"):
+        raw_url = "postgresql+psycopg2://" + raw_url[len("postgresql://"):]
+
+    url = make_url(raw_url)
+    username, password = os.getenv("NEON_DB_USERNAME"), os.getenv("NEON_DB_PASSWORD")
+    if not url.username and username:
+        url = url.set(username=username)
+    if not url.password and password:
+        url = url.set(password=password)
+    return url.render_as_string(hide_password=False)
+
+
+def _jwt_secret() -> str:
+    secret = os.getenv("JWT_SECRET_KEY")
+    if secret:
+        return secret
+    logger.warning("JWT_SECRET_KEY is not set: using a random key (tokens expire on restart).")
+    return secrets.token_urlsafe(48)
+
+
+@dataclass(frozen=True)
+class Settings:
+    database_url: str | None = field(default_factory=resolve_database_url)
+    jwt_secret_key: str = field(default_factory=_jwt_secret)
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = field(
+        default_factory=lambda: int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "120"))
+    )
+    password_reset_expire_minutes: int = field(
+        default_factory=lambda: int(os.getenv("PASSWORD_RESET_EXPIRE_MINUTES", "30"))
+    )
+    # There is no e-mail service yet. Only in development the reset token is returned in the response.
+    password_reset_expose_token: bool = field(
+        default_factory=lambda: _env_bool("PASSWORD_RESET_EXPOSE_TOKEN", False)
+    )
+    cors_origins: list[str] = field(
+        default_factory=lambda: [
+            origin.strip() for origin in os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",") if origin.strip()
+        ]
+    )
+    ai_service_url: str = field(default_factory=lambda: os.getenv("AI_SERVICE_URL", "http://localhost:8001").rstrip("/"))
+    ai_service_api_key: str = field(default_factory=lambda: os.getenv("AI_SERVICE_API_KEY", ""))
+    ai_service_timeout_seconds: float = field(
+        default_factory=lambda: float(os.getenv("AI_SERVICE_TIMEOUT_SECONDS", "900"))
+    )
+    upload_dir: Path = field(default_factory=lambda: Path(os.getenv("UPLOAD_DIR", "uploads")))
+    max_video_size_mb: int = field(default_factory=lambda: int(os.getenv("MAX_VIDEO_SIZE_MB", "200")))
+    allow_simulation_mode: bool = field(default_factory=lambda: _env_bool("ALLOW_SIMULATION_MODE", True))
+
+
+settings = Settings()
