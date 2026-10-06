@@ -27,27 +27,38 @@ def _env_bool(name: str, default: bool) -> bool:
 def resolve_database_url() -> str | None:
     """Build the SQLAlchemy URL.
 
-    Supports both styles found in the project:
     - DATABASE_URL=postgresql://user:password@host/db?sslmode=require   (preferred)
     - NEON_DB_URL + NEON_DB_USERNAME + NEON_DB_PASSWORD                  (current Render setup)
+      As in the original prototype, NEON_DB_USERNAME/PASSWORD take priority over any
+      credentials written inside NEON_DB_URL.
     A leftover ``jdbc:`` prefix from the old Spring Boot configuration is removed.
     """
-    raw_url = os.getenv("DATABASE_URL") or os.getenv("NEON_DB_URL")
+    database_url = os.getenv("DATABASE_URL")
+    raw_url = database_url or os.getenv("NEON_DB_URL")
     if not raw_url:
         return None
-    raw_url = raw_url.strip().removeprefix("jdbc:")
+    raw_url = raw_url.strip().strip('"').strip("'").removeprefix("jdbc:")
     if raw_url.startswith("postgres://"):
         raw_url = "postgresql://" + raw_url[len("postgres://"):]
     if raw_url.startswith("postgresql://"):
         raw_url = "postgresql+psycopg2://" + raw_url[len("postgresql://"):]
 
     url = make_url(raw_url)
-    username, password = os.getenv("NEON_DB_USERNAME"), os.getenv("NEON_DB_PASSWORD")
-    if not url.username and username:
-        url = url.set(username=username)
-    if not url.password and password:
-        url = url.set(password=password)
+    if not database_url:
+        username, password = os.getenv("NEON_DB_USERNAME"), os.getenv("NEON_DB_PASSWORD")
+        if username:
+            url = url.set(username=username)
+        if password:
+            url = url.set(password=password)
     return url.render_as_string(hide_password=False)
+
+
+def describe_database_url(database_url: str | None) -> str:
+    """Safe description for logs (never includes the password)."""
+    if not database_url:
+        return "not configured"
+    url = make_url(database_url)
+    return f"{url.username}@{url.host}:{url.port or 5432}/{url.database}"
 
 
 def _jwt_secret() -> str:
@@ -77,6 +88,9 @@ class Settings:
         default_factory=lambda: [
             origin.strip() for origin in os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",") if origin.strip()
         ]
+    )
+    database_connect_timeout_seconds: int = field(
+        default_factory=lambda: int(os.getenv("DATABASE_CONNECT_TIMEOUT_SECONDS", "10"))
     )
     ai_service_url: str = field(default_factory=lambda: os.getenv("AI_SERVICE_URL", "http://localhost:8001").rstrip("/"))
     ai_service_api_key: str = field(default_factory=lambda: os.getenv("AI_SERVICE_API_KEY", ""))
