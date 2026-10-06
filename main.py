@@ -5,13 +5,14 @@ Frontend -> Backend -> AI Service      (the Frontend never calls the AI Service)
 """
 
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import database
-from config import settings
+from config import describe_database_url, settings
 from database import get_database_status
 from routers import (
     analyses, auth, formations, insights, matches, players, recommendations, reports, tactical_plays, teams,
@@ -52,8 +53,10 @@ def recover_interrupted_analyses() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Database target: %s", describe_database_url(settings.database_url))
     get_analysis_facade()  # connects the analysis queue to its handler
-    recover_interrupted_analyses()
+    # In background: the server must open its port even if the database is slow or unreachable.
+    threading.Thread(target=recover_interrupted_analyses, name="analysis-recovery", daemon=True).start()
     yield
 
 
