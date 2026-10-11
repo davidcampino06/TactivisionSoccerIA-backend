@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -13,18 +13,23 @@ class ORMModel(BaseModel):
 
 
 # ----------------------------------------------------------------- auth / users
+# Password fields carry "rsa:<base64>" (encrypted in the browser), so the schema only bounds the
+# raw size; the real rules (password_policy.py) are checked after decryption.
+EncryptedPassword = Annotated[str, Field(min_length=1, max_length=1024)]
+
+
 class RegisterRequest(BaseModel):
     first_name: str = Field(min_length=1, max_length=255)
     last_name: str = Field(min_length=1, max_length=255)
     email: EmailStr
-    password: str = Field(min_length=8, max_length=128)
+    password: EncryptedPassword
     phone: str | None = Field(default=None, max_length=255)
     role: Literal["COACH", "ANALYST"]  # ADMINISTRATOR can never self-register
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: EncryptedPassword
 
 
 class TokenResponse(BaseModel):
@@ -39,12 +44,12 @@ class PasswordRecoveryRequest(BaseModel):
 
 class PasswordResetRequest(BaseModel):
     token: str
-    new_password: str = Field(min_length=8, max_length=128)
+    new_password: EncryptedPassword
 
 
 class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str = Field(min_length=8, max_length=128)
+    current_password: EncryptedPassword
+    new_password: EncryptedPassword
 
 
 class UserOut(ORMModel):
@@ -110,11 +115,15 @@ class JoinTeamRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------- players
+PreferredFoot = Literal["RIGHT", "LEFT", "BOTH"]
+
+
 class PlayerCreate(BaseModel):
     first_name: str = Field(min_length=1, max_length=255)
     last_name: str = Field(min_length=1, max_length=255)
     shirt_number: int | None = Field(default=None, ge=0, le=99)
     position: str | None = Field(default=None, max_length=255)
+    preferred_foot: PreferredFoot | None = None
 
 
 class PlayerUpdate(BaseModel):
@@ -122,6 +131,7 @@ class PlayerUpdate(BaseModel):
     last_name: str | None = Field(default=None, min_length=1, max_length=255)
     shirt_number: int | None = Field(default=None, ge=0, le=99)
     position: str | None = Field(default=None, max_length=255)
+    preferred_foot: PreferredFoot | None = None
     status: Literal["ACTIVE", "INJURED", "SUSPENDED", "INACTIVE"] | None = None
 
 
@@ -136,6 +146,7 @@ class PlayerOut(ORMModel):
     last_name: str
     shirt_number: int | None
     position: str | None
+    preferred_foot: str | None
     status: str
     created_at: datetime
 
@@ -147,6 +158,18 @@ class PlayerHistoryOut(ORMModel):
     joined_at: datetime
     left_at: datetime | None
     withdrawal_reason: str | None
+
+
+class PlayerAppearanceOut(BaseModel):
+    """An analysis where a human linked one or more tracks to the player."""
+    analysis_id: str
+    match_id: str
+    opponent: str
+    match_date: datetime
+    analysis_mode: str
+    tracks: list[int]
+    detections: int
+    mean_confidence: float
 
 
 # ---------------------------------------------------------------------- matches
@@ -239,6 +262,17 @@ class MatchFormationRequest(BaseModel):
     formation_id: str
 
 
+MAX_CONFIGURATION_BYTES = 64_000
+
+
+def _check_configuration_size(value: dict[str, Any]) -> dict[str, Any]:
+    """A board has at most a few dozen tokens and arrows: reject oversized payloads."""
+    import json
+    if len(json.dumps(value, ensure_ascii=False).encode()) > MAX_CONFIGURATION_BYTES:
+        raise ValueError(f"Configuration is larger than {MAX_CONFIGURATION_BYTES} bytes.")
+    return value
+
+
 class TacticalPlayCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=255)
@@ -247,6 +281,15 @@ class TacticalPlayCreate(BaseModel):
     configuration: dict[str, Any] = Field(
         default_factory=dict, description="Initial version: positions, arrows, notes (JSON)."
     )
+
+    _size = field_validator("configuration")(_check_configuration_size)
+
+
+class TacticalPlayUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=255)
+    action_type: str | None = Field(default=None, max_length=255)
+    is_reusable: bool | None = None
 
 
 class TacticalPlayOut(ORMModel):
@@ -259,12 +302,22 @@ class TacticalPlayOut(ORMModel):
     is_reusable: bool
 
 
+class TacticalPlaySummaryOut(TacticalPlayOut):
+    """List item: the play plus its current version, so the list can draw a preview."""
+    version_count: int
+    current_version_number: int | None
+    updated_at: datetime | None
+    configuration: dict[str, Any]
+
+
 class TacticalPlayVersionCreate(BaseModel):
     """New version. With ``base_version_id`` the version is cloned (Prototype) and
     ``configuration`` is applied as a patch over the clone."""
 
     base_version_id: str | None = None
     configuration: dict[str, Any] = Field(default_factory=dict)
+
+    _size = field_validator("configuration")(_check_configuration_size)
 
 
 class TacticalPlayVersionOut(ORMModel):
