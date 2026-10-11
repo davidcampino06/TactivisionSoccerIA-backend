@@ -12,6 +12,9 @@ from config import settings
 
 ACCESS_TOKEN_PURPOSE = "access"
 PASSWORD_RESET_PURPOSE = "password_reset"
+# bcrypt work factor: 2^12 rounds. Each hash also has its own random salt, so two users with the
+# same password get different hashes, and the original password cannot be recovered from the hash.
+BCRYPT_ROUNDS = 12
 
 
 class InvalidTokenError(ValueError):
@@ -19,7 +22,7 @@ class InvalidTokenError(ValueError):
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)).decode("utf-8")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
