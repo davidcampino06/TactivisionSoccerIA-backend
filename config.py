@@ -69,8 +69,30 @@ def _jwt_secret() -> str:
     return secrets.token_urlsafe(48)
 
 
+def _rsa_private_key() -> str | None:
+    """PEM private key; a one-line value with literal \\n (as in .env or Render) is accepted."""
+    raw = (os.getenv("RSA_PRIVATE_KEY") or "").strip().strip('"').strip("'")
+    return raw.replace("\\n", "\n") if raw else None
+
+
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
+IS_PRODUCTION = ENVIRONMENT == "production"
+
+
 @dataclass(frozen=True)
 class Settings:
+    environment: str = ENVIRONMENT
+    # Swagger (/docs) lists every endpoint: it is turned off in production.
+    enable_docs: bool = field(default_factory=lambda: _env_bool("ENABLE_DOCS", not IS_PRODUCTION))
+    rsa_private_key: str | None = field(default_factory=_rsa_private_key)
+    # In production the browser must send passwords encrypted (RSA-OAEP); plain text is rejected.
+    require_encrypted_passwords: bool = field(
+        default_factory=lambda: _env_bool("REQUIRE_ENCRYPTED_PASSWORDS", IS_PRODUCTION)
+    )
+    # Row-Level Security in PostgreSQL (TactiSoccerIA-db migration 0002 must be applied first).
+    database_rls: bool = field(default_factory=lambda: _env_bool("DATABASE_RLS", False))
+    login_max_failed_attempts: int = field(default_factory=lambda: int(os.getenv("LOGIN_MAX_FAILED_ATTEMPTS", "5")))
+    login_lock_minutes: int = field(default_factory=lambda: int(os.getenv("LOGIN_LOCK_MINUTES", "15")))
     database_url: str | None = field(default_factory=resolve_database_url)
     jwt_secret_key: str = field(default_factory=_jwt_secret)
     jwt_algorithm: str = "HS256"
