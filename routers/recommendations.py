@@ -1,9 +1,10 @@
 """AI recommendations: list and human review (review / confirm / dismiss)."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from database import get_db
+from errors import AppError
 from dependencies import AccessLevel, get_current_user, load_match, load_recommendation
 from models import AIRecommendation, RecommendationIndicator, RecommendationStatus, TacticalIndicator, User
 from schemas import RecommendationOut, RecommendationStatusUpdate
@@ -58,7 +59,8 @@ def review_recommendation(recommendation_id: str, body: RecommendationStatusUpda
     recommendation = load_recommendation(db, recommendation_id, user, AccessLevel.CONTRIBUTE)
     allowed_from, target = TRANSITIONS[body.action]
     if recommendation.status not in allowed_from:
-        raise HTTPException(status.HTTP_409_CONFLICT, f"Cannot {body.action} a {recommendation.status} recommendation.")
+        raise AppError(status.HTTP_409_CONFLICT, "INVALID_RECOMMENDATION_STATE",
+                       f"Cannot {body.action} a {recommendation.status} recommendation.")
     recommendation.status = target
     db.commit()
     return _with_indicator_names(db, [recommendation])[0]
