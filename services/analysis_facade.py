@@ -18,6 +18,7 @@ from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
 import database
+import rls
 from config import settings
 from models import Detection, Match, Video, VideoAnalysis
 from services.ai_client import MODE_SIMULATION, AIServiceError, source_factory_for
@@ -33,7 +34,14 @@ logger = logging.getLogger("tactivision.analysis")
 
 
 class AnalysisRequestError(ValueError):
-    pass
+    """The analysis cannot be started; ``code`` is translated to Spanish by the frontend."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+MODE_LABELS = {"REAL_VIDEO_ANALYSIS": "análisis de video real", "SIMULATION_MODE": "modo simulación"}
 
 
 def video_file_path(video: Video) -> Path:
@@ -50,14 +58,14 @@ class VideoAnalysisFacade:
     def request_analysis(self, db: Session, video: Video, options: dict) -> tuple[VideoAnalysis, int]:
         mode = options["mode"]
         if mode == MODE_SIMULATION and not settings.allow_simulation_mode:
-            raise AnalysisRequestError("SIMULATION MODE is disabled on this server.")
+            raise AnalysisRequestError("SIMULATION_DISABLED", "SIMULATION MODE is disabled on this server.")
         if mode != MODE_SIMULATION and not video_file_path(video).exists():
-            raise AnalysisRequestError("The video file is not available on the server; upload it again.")
+            raise AnalysisRequestError("VIDEO_FILE_MISSING", "The video file is not available on the server; upload it again.")
         busy = db.query(VideoAnalysis).filter(
             VideoAnalysis.video_id == video.id, VideoAnalysis.status.in_(("PENDING", "PROCESSING"))
         ).first()
         if busy:
-            raise AnalysisRequestError(f"Video already has an analysis in progress ({busy.id}).")
+            raise AnalysisRequestError("ANALYSIS_IN_PROGRESS", f"Video already has an analysis in progress ({busy.id}).")
 
         analysis = VideoAnalysis(
             video_id=video.id, status="PENDING", analysis_mode=mode,
@@ -66,7 +74,7 @@ class VideoAnalysisFacade:
         db.add(analysis)
         db.commit()
         team_id = self._team_id(db, video)
-        self._notify(ANALYSIS_QUEUED, team_id, analysis.id, f"Analysis queued ({mode}).")
+        self._notify(ANALYSIS_QUEUED, team_id, analysis.id, f"Análisis en cola ({MODE_LABELS.get(mode, mode)}).")
         position = self._queue.submit(AnalysisJob(analysis.id, options))
         db.refresh(analysis)
         return analysis, position
@@ -76,7 +84,7 @@ class VideoAnalysisFacade:
         machine.cancel()  # raises InvalidStateTransition when terminal
         self._queue.discard(analysis.id)
         db.commit()
-        self._notify(ANALYSIS_CANCELLED, self._team_id(db, analysis.video), analysis.id, "Analysis cancelled.")
+        self._notify(ANALYSIS_CANCELLED, self._team_id(db, analysis.video), analysis.id, "Análisis cancelado.")
         return analysis
 
     def queue_position(self, analysis_id: str) -> int | None:
@@ -84,7 +92,7 @@ class VideoAnalysisFacade:
 
     # ------------------------------------------------------------ worker side
     def run_analysis(self, job: AnalysisJob) -> None:
-        with database.SessionLocal() as db:
+        with rls.mark_system(database.SessionLocal()) as db:  # background job: not tied to a request
             analysis = db.get(VideoAnalysis, job.analysis_id)
             if analysis is None or analysis.status != "PENDING":
                 return
@@ -94,14 +102,19 @@ class VideoAnalysisFacade:
             machine.start()
             video.status = "ANALYZING"
             db.commit()
-            self._notify(ANALYSIS_STARTED, match.team_id, analysis.id, "Analysis started.")
+            self._notify(ANALYSIS_STARTED, match.team_id, analysis.id, "Análisis iniciado.")
 
             try:
                 factory = source_factory_for(analysis.analysis_mode)
                 raw_result = factory.create_client().analyze(video_file_path(video), job.options)
                 payload = factory.create_validator().validate(raw_result)
-            except (AIServiceError, ValueError) as error:
-                self._fail(db, analysis, video, match.team_id, str(error))
+            except AIServiceError as error:
+                logger.warning("Analysis %s failed in the AI Service: %s", analysis.id, error)
+                self._fail(db, analysis, video, match.team_id, error.user_message)
+                return
+            except ValueError as error:
+                logger.warning("Analysis %s failed: %s", analysis.id, error)
+                self._fail(db, analysis, video, match.team_id, AIServiceError.default_user_message)
                 return
 
             db.refresh(analysis)
@@ -113,11 +126,11 @@ class VideoAnalysisFacade:
 
             try:
                 self._persist(db, analysis, video, match, payload)
-            except Exception as error:  # database problems
+            except Exception:  # database problems
                 db.rollback()
                 logger.exception("Persisting analysis %s failed", analysis.id)
                 analysis = db.get(VideoAnalysis, job.analysis_id)
-                self._fail(db, analysis, analysis.video, match.team_id, f"Could not store results: {error}")
+                self._fail(db, analysis, analysis.video, match.team_id, "No se pudieron guardar los resultados del análisis. Intenta de nuevo.")
 
     def _persist(self, db: Session, analysis: VideoAnalysis, video: Video, match: Match, payload) -> None:
         adapter = AIResultAdapter(payload, analysis.id, match.id)
@@ -139,13 +152,13 @@ class VideoAnalysisFacade:
 
         self._notify(
             ANALYSIS_COMPLETED, match.team_id, analysis.id,
-            f"{payload.mode}: {len(payload.tactical_indicators)} indicators, "
-            f"{len(recommendations)} possible issues.",
+            f"Análisis completado ({MODE_LABELS.get(payload.mode, payload.mode)}): "
+            f"{len(payload.tactical_indicators)} indicadores y {len(recommendations)} posibles problemas.",
         )
         for recommendation in recommendations:
             if recommendation.severity == "HIGH":
                 self._notify(TACTICAL_ALERT, match.team_id, analysis.id,
-                             f"{recommendation.title} (confidence {recommendation.confidence:.2f})")
+                             f"{recommendation.title} (confianza {round(recommendation.confidence * 100)} %)")
 
     def _fail(self, db: Session, analysis: VideoAnalysis, video: Video, team_id: str, reason: str) -> None:
         try:
