@@ -74,6 +74,7 @@ class Player(Base):
     last_name: Mapped[str] = mapped_column(String(255))
     shirt_number: Mapped[int | None] = mapped_column(Integer)
     position: Mapped[str | None] = mapped_column(String(255))
+    preferred_foot: Mapped[str | None] = mapped_column(String(10))
     status: Mapped[str] = mapped_column(String(255), default="ACTIVE")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
