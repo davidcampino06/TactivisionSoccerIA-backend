@@ -1,10 +1,11 @@
 """Formation catalogue. The ERD has no team_id on formations, so they are shared
 (e.g. 4-3-3); they contain no private tactical content."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from database import get_db
+from errors import AppError
 from dependencies import get_current_user, require_roles
 from models import Formation, User, UserRole
 from schemas import FormationCreate, FormationOut
@@ -21,7 +22,7 @@ def list_formations(_: User = Depends(get_current_user), db: Session = Depends(g
 def create_formation(body: FormationCreate, _: User = Depends(require_roles(UserRole.COACH, UserRole.ANALYST)),
                      db: Session = Depends(get_db)):
     if db.query(Formation).filter(Formation.name == body.name).first():
-        raise HTTPException(status.HTTP_409_CONFLICT, "Formation already exists.")
+        raise AppError(status.HTTP_409_CONFLICT, "FORMATION_EXISTS", "Formation already exists.")
     formation = Formation(**body.model_dump())
     db.add(formation)
     db.commit()
