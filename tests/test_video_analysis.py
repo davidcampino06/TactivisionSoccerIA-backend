@@ -103,6 +103,10 @@ def test_full_analysis_is_persisted(client, coach, team, match, video, analyst):
     assert tracks[0]["player_id"] == player["id"]
     detections = client.get(f"/api/analyses/{analysis_id}/detections?track_id=1", headers=headers).json()
     assert all(d["player_number"] == 7 for d in detections)
+    appearances = client.get(f"/api/players/{player['id']}/appearances", headers=headers).json()
+    assert len(appearances) == 1
+    assert appearances[0]["analysis_id"] == analysis_id and appearances[0]["opponent"] == "Nacional"
+    assert appearances[0]["tracks"] == [1] and appearances[0]["detections"] == 2
 
     # Recommendation review workflow
     rec_url = f"/api/recommendations/{recommendation['id']}"
@@ -111,14 +115,16 @@ def test_full_analysis_is_persisted(client, coach, team, match, video, analyst):
     assert client.patch(rec_url, headers=headers, json={"action": "dismiss"}).status_code == 409
 
     # Terminal state cannot be cancelled
-    assert client.post(f"/api/analyses/{analysis_id}/cancel", headers=headers).status_code == 409
+    cancelled = client.post(f"/api/analyses/{analysis_id}/cancel", headers=headers)
+    assert cancelled.status_code == 409 and cancelled.json()["code"] == "INVALID_ANALYSIS_STATE"
 
 
 def test_ai_service_failure_marks_analysis_failed(client, coach, video):
     FakeClient.response = AIServiceError("AI Service unreachable: connection refused")
     analysis = client.post(f"/api/videos/{video['id']}/analysis", headers=coach["headers"], json={}).json()
     body = client.get(f"/api/analyses/{analysis['id']}", headers=coach["headers"]).json()
-    assert body["status"] == "FAILED" and "unreachable" in body["warning_message"]
+    assert body["status"] == "FAILED" and "servicio de IA" in body["warning_message"]
+    assert "connection refused" not in body["warning_message"]  # technical detail stays in the logs
     assert client.get(f"/api/videos/{video['id']}", headers=coach["headers"]).json()["status"] == "UPLOADED"
 
 
@@ -126,7 +132,7 @@ def test_mode_mismatch_is_rejected(client, coach, video):
     FakeClient.response = fake_payload(mode="SIMULATION_MODE")
     analysis = client.post(f"/api/videos/{video['id']}/analysis", headers=coach["headers"], json={}).json()
     body = client.get(f"/api/analyses/{analysis['id']}", headers=coach["headers"]).json()
-    assert body["status"] == "FAILED" and "Expected REAL_VIDEO_ANALYSIS" in body["warning_message"]
+    assert body["status"] == "FAILED" and "tipo de análisis distinto" in body["warning_message"]
 
 
 def test_reports_comparison_and_evolution(client, coach, team, match, video):
@@ -154,7 +160,7 @@ def test_reports_comparison_and_evolution(client, coach, team, match, video):
     comparison = client.get(f"/api/teams/{team['id']}/comparisons?match_ids={match['id']}&match_ids={other_ids[0]}",
                             headers=headers).json()
     assert comparison["indicators"][0]["values"][0] is not None
-    assert any("without a completed analysis" in w for w in comparison["warnings"])
+    assert any("sin un análisis completado" in w for w in comparison["warnings"])
     assert client.get(f"/api/teams/{team['id']}/comparisons?match_ids={match['id']}", headers=headers).status_code == 400
 
     evolution = client.get(f"/api/teams/{team['id']}/evolution", headers=headers).json()
@@ -162,3 +168,24 @@ def test_reports_comparison_and_evolution(client, coach, team, match, video):
     evolution_report = client.post(f"/api/teams/{team['id']}/reports", headers=headers,
                                    json={"report_type": "TEAM_EVOLUTION"})
     assert evolution_report.status_code == 201
+
+
+def test_ai_errors_have_spanish_user_messages():
+    from services.ai_client import AIResponseError, _user_message_for_status
+    assert "no está disponible" in _user_message_for_status(503)
+    assert "no pudo procesar este video" in _user_message_for_status(415)
+    error = AIServiceError("AI Service unreachable: [Errno 111]", "No se pudo contactar el servicio de IA.")
+    assert error.user_message.startswith("No se pudo contactar") and "Errno" in str(error)
+    assert "no es válida" in AIResponseError("bad payload").user_message
+
+
+def test_missing_video_file_returns_code(client, coach, video):
+    import database
+    import rls
+    from models import Video
+    from services.analysis_facade import video_file_path
+    with rls.mark_system(database.SessionLocal()) as db:
+        video_file_path(db.get(Video, video["id"])).unlink()
+    response = client.post(f"/api/videos/{video['id']}/analysis", headers=coach["headers"], json={})
+    assert response.status_code == 409
+    assert response.json()["code"] == "VIDEO_FILE_MISSING"
