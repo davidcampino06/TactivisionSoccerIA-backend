@@ -435,6 +435,7 @@ class ReportOut(ORMModel):
     id: str
     team_id: str
     generated_by: str | None
+    generated_by_name: str | None = None
     title: str
     report_type: str
     generated_at: datetime
