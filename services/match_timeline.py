@@ -14,9 +14,10 @@ from sqlalchemy.orm import Session
 
 from data_structures import DoublyLinkedList
 from models import AIRecommendation, Match, TacticalIndicator, Video, VideoAnalysis
+from errors import DomainError
 
 
-class ComparisonError(ValueError):
+class ComparisonError(DomainError):
     pass
 
 
@@ -33,7 +34,7 @@ class MatchTimeline:
     def neighbors(self, match_id: str) -> tuple[Match | None, Match | None]:
         node = self._list.find(lambda m: m.id == match_id)
         if node is None:
-            raise ComparisonError("Match not found in team timeline.")
+            raise ComparisonError("Match not found in team timeline.", "NOT_FOUND")
         return (node.previous.value if node.previous else None, node.next.value if node.next else None)
 
     def nodes(self):
@@ -79,23 +80,23 @@ def _mode_warning(snapshots: list[dict]) -> list[str]:
     warnings = []
     modes = {s["analysis_mode"] for s in snapshots if s["analysis_mode"]}
     if "SIMULATION_MODE" in modes:
-        warnings.append("Some matches use SIMULATION MODE data; do not mix them with real conclusions.")
+        warnings.append("Algunos partidos usan datos de MODO SIMULACIÓN; no los mezcles con conclusiones reales.")
     missing = [s["opponent"] for s in snapshots if not s["analysis_id"]]
     if missing:
-        warnings.append(f"Matches without a completed analysis: {', '.join(missing)}.")
+        warnings.append(f"Partidos sin un análisis completado: {', '.join(missing)}.")
     return warnings
 
 
 def _ordered_matches(db: Session, team_id: str, match_ids: list[str]) -> list[Match]:
     matches = db.query(Match).filter(Match.id.in_(match_ids), Match.team_id == team_id).all()
     if len(matches) != len(set(match_ids)):
-        raise ComparisonError("All matches must exist and belong to the team.")
+        raise ComparisonError("All matches must exist and belong to the team.", "NOT_FOUND")
     return sorted(matches, key=lambda m: m.match_date)
 
 
 def compare_matches(db: Session, team_id: str, match_ids: list[str]) -> dict:
     if len(set(match_ids)) < 2:
-        raise ComparisonError("Select at least 2 matches to compare.")
+        raise ComparisonError("Select at least 2 matches to compare.", "COMPARE_MIN_MATCHES")
     snapshots = [_match_snapshot(db, match) for match in _ordered_matches(db, team_id, match_ids)]
     names = sorted({name for s in snapshots for name in s["indicators"]})
     rows = []
@@ -118,7 +119,7 @@ def team_evolution(db: Session, team_id: str, match_ids: list[str] | None = None
     if selected is None:
         nodes = nodes[-last:]
     if len(nodes) < 3:
-        raise ComparisonError("Team evolution needs at least 3 matches.")
+        raise ComparisonError("Team evolution needs at least 3 matches.", "EVOLUTION_MIN_MATCHES")
 
     snapshots = [_match_snapshot(db, node.value) for node in nodes]
     series: OrderedDict[str, list] = OrderedDict()
