@@ -16,6 +16,18 @@ from services.reports import ReportDirector, ReportError, export_report, save_re
 router = APIRouter(prefix="/api", tags=["Reports"])
 
 
+def _author_names(db: Session, reports: list[Report]) -> dict[str, str]:
+    ids = {report.generated_by for report in reports if report.generated_by}
+    if not ids:
+        return {}
+    return {user.id: f"{user.first_name} {user.last_name}" for user in db.query(User).filter(User.id.in_(ids))}
+
+
+def report_out(report: Report, names: dict[str, str]) -> ReportOut:
+    return ReportOut(**ReportOut.model_validate(report).model_dump(exclude={"generated_by_name"}),
+                     generated_by_name=names.get(report.generated_by or ""))
+
+
 @router.post("/teams/{team_id}/reports", response_model=ReportDetailOut, status_code=status.HTTP_201_CREATED)
 def generate_report(team_id: str, body: ReportCreate, user: User = Depends(get_current_user),
                     db: Session = Depends(get_db)):
@@ -46,19 +58,30 @@ def generate_report(team_id: str, body: ReportCreate, user: User = Depends(get_c
         raise domain_error(error, status.HTTP_400_BAD_REQUEST) from error
     report = save_report(db, team, user, body.report_type, title, snapshot)
     db.commit()
-    return ReportDetailOut(**ReportOut.model_validate(report).model_dump(), snapshot=snapshot)
+    return ReportDetailOut(**report_out(report, {user.id: f"{user.first_name} {user.last_name}"}).model_dump(),
+                           snapshot=snapshot)
 
 
 @router.get("/teams/{team_id}/reports", response_model=list[ReportOut])
 def list_reports(team_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     load_team(db, team_id, user, AccessLevel.READ)
-    return db.query(Report).filter(Report.team_id == team_id).order_by(Report.generated_at.desc()).all()
+    reports = db.query(Report).filter(Report.team_id == team_id).order_by(Report.generated_at.desc()).all()
+    names = _author_names(db, reports)
+    return [report_out(report, names) for report in reports]
 
 
 @router.get("/reports/{report_id}", response_model=ReportDetailOut)
 def get_report(report_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     report = load_report(db, report_id, user, AccessLevel.READ)
-    return ReportDetailOut(**ReportOut.model_validate(report).model_dump(), snapshot=json.loads(report.snapshot_data))
+    return ReportDetailOut(**report_out(report, _author_names(db, [report])).model_dump(),
+                           snapshot=json.loads(report.snapshot_data))
+
+
+@router.delete("/reports/{report_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_report(report_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Only the coach deletes reports (analysts can generate and read them)."""
+    db.delete(load_report(db, report_id, user, AccessLevel.MANAGE))
+    db.commit()
 
 
 @router.get("/reports/{report_id}/export")
