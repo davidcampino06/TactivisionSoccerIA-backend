@@ -31,6 +31,11 @@ engine = (
 )
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False) if engine else None
 
+if SessionLocal is not None and settings.database_rls:
+    import rls
+
+    rls.install(SessionLocal)
+
 
 def get_db() -> Iterator[Session]:
     if SessionLocal is None:
