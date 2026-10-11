@@ -2,10 +2,11 @@
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from database import get_db
+from errors import domain_error
 from dependencies import AccessLevel, get_current_user, load_analysis, load_match, load_report, load_team
 from models import Match, Report, User
 from schemas import ReportCreate, ReportDetailOut, ReportOut
@@ -23,22 +24,26 @@ def generate_report(team_id: str, body: ReportCreate, user: User = Depends(get_c
     try:
         if body.report_type == "MATCH":
             if not body.match_id:
-                raise ReportError("match_id is required for MATCH reports.")
+                raise ReportError("match_id is required for MATCH reports.", "MATCH_REQUIRED")
             match = load_match(db, body.match_id, user, AccessLevel.READ)
-            title = body.title or f"Match report vs {match.opponent}"
+            if match.team_id != team.id:
+                raise ReportError("The match does not belong to this team.", "NOT_FOUND")
+            title = body.title or f"Reporte del partido vs {match.opponent}"
             snapshot = director.match_report(team, user, title, match)
         elif body.report_type == "VIDEO_ANALYSIS":
             if not body.analysis_id:
-                raise ReportError("analysis_id is required for VIDEO_ANALYSIS reports.")
+                raise ReportError("analysis_id is required for VIDEO_ANALYSIS reports.", "ANALYSIS_REQUIRED")
             analysis = load_analysis(db, body.analysis_id, user, AccessLevel.READ)
             match = db.get(Match, analysis.video.match_id)
-            title = body.title or f"Video analysis vs {match.opponent}"
+            if match.team_id != team.id:
+                raise ReportError("The analysis does not belong to this team.", "NOT_FOUND")
+            title = body.title or f"Análisis de video vs {match.opponent}"
             snapshot = director.analysis_report(team, user, title, analysis)
         else:
-            title = body.title or f"Team evolution - {team.name}"
+            title = body.title or f"Evolución del equipo - {team.name}"
             snapshot = director.evolution_report(team, user, title, body.match_ids)
     except (ReportError, ComparisonError) as error:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
+        raise domain_error(error, status.HTTP_400_BAD_REQUEST) from error
     report = save_report(db, team, user, body.report_type, title, snapshot)
     db.commit()
     return ReportDetailOut(**ReportOut.model_validate(report).model_dump(), snapshot=snapshot)
@@ -63,6 +68,6 @@ def export(report_id: str, format: str = Query(default="json"), user: User = Dep
     try:
         content, media_type, file_name = export_report(report, format.lower())
     except ReportError as error:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
+        raise domain_error(error, status.HTTP_400_BAD_REQUEST) from error
     return Response(content, media_type=media_type,
                     headers={"Content-Disposition": f'attachment; filename="{file_name}"'})
