@@ -6,6 +6,8 @@
 - Queue (FIFO):  pending video analyses -> processed in arrival order, one at a time.
 - DoublyLinkedList: chronological match timeline -> each match knows its previous and next
   match, used for team evolution (deltas between consecutive matches) and navigation.
+- HashTable (separate chaining): failed login attempts per e-mail -> O(1) average lookup to
+  decide whether an account is temporarily locked.
 """
 
 from __future__ import annotations
@@ -17,6 +19,8 @@ from dataclasses import dataclass
 from typing import Generic, TypeVar
 
 T = TypeVar("T")
+K = TypeVar("K")
+V = TypeVar("V")
 
 
 class EmptyStructureError(IndexError):
@@ -167,6 +171,79 @@ class DoublyLinkedList(Generic[T]):
         while current:
             yield current.value
             current = current.previous
+
+    def __len__(self) -> int:
+        return self._size
+
+
+class HashTable(Generic[K, V]):
+    """Hash table with separate chaining (one list of (key, value) pairs per bucket).
+
+    Average O(1) put/get/remove. When the load factor (items / buckets) passes 0.75 the table
+    doubles its buckets and re-inserts every pair (rehash), keeping chains short.
+    """
+
+    MAX_LOAD_FACTOR = 0.75
+
+    def __init__(self, capacity: int = 16) -> None:
+        self._buckets: list[list[tuple[K, V]]] = [[] for _ in range(max(1, capacity))]
+        self._size = 0
+
+    def _index(self, key: K) -> int:
+        return hash(key) % len(self._buckets)
+
+    def put(self, key: K, value: V) -> None:
+        bucket = self._buckets[self._index(key)]
+        for position, (existing, _) in enumerate(bucket):
+            if existing == key:
+                bucket[position] = (key, value)
+                return
+        bucket.append((key, value))
+        self._size += 1
+        if self.load_factor > self.MAX_LOAD_FACTOR:
+            self._resize(len(self._buckets) * 2)
+
+    def get(self, key: K, default: V | None = None) -> V | None:
+        for existing, value in self._buckets[self._index(key)]:
+            if existing == key:
+                return value
+        return default
+
+    def remove(self, key: K) -> bool:
+        bucket = self._buckets[self._index(key)]
+        for position, (existing, _) in enumerate(bucket):
+            if existing == key:
+                del bucket[position]
+                self._size -= 1
+                return True
+        return False
+
+    def __contains__(self, key: object) -> bool:
+        return any(existing == key for existing, _ in self._buckets[hash(key) % len(self._buckets)])
+
+    def keys(self) -> Iterator[K]:
+        for bucket in self._buckets:
+            for key, _ in bucket:
+                yield key
+
+    def clear(self) -> None:
+        self._buckets = [[] for _ in range(len(self._buckets))]
+        self._size = 0
+
+    @property
+    def load_factor(self) -> float:
+        return self._size / len(self._buckets)
+
+    @property
+    def capacity(self) -> int:
+        return len(self._buckets)
+
+    def _resize(self, new_capacity: int) -> None:
+        old_pairs = [pair for bucket in self._buckets for pair in bucket]
+        self._buckets = [[] for _ in range(new_capacity)]
+        self._size = 0
+        for key, value in old_pairs:
+            self.put(key, value)
 
     def __len__(self) -> int:
         return self._size
