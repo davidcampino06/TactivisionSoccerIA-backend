@@ -25,7 +25,7 @@ def main() -> int:
     print("status:", api.get("/api/status").json())
     email = f"e2e-{uuid.uuid4().hex[:8]}@test.com"
     auth = api.post("/api/auth/register", json={"first_name": "E2E", "last_name": "Coach", "email": email,
-                                                 "password": "Password123", "role": "COACH"}).json()
+                                                 "password": "Tactica#2026", "role": "COACH"}).json()
     api.headers["Authorization"] = f"Bearer {auth['access_token']}"
     team = api.post("/api/teams", json={"name": "E2E Team"}).json()
     match = api.post(f"/api/teams/{team['id']}/matches",

@@ -8,23 +8,32 @@ def test_status_keeps_prototype_contract(client):
     assert body["ai_service"] == "UNREACHABLE"
 
 
+def test_status_exposes_no_internal_details(client):
+    """Public endpoint: only three generic states, no versions, URLs, hosts or error messages."""
+    body = client.get("/api/status").json()
+    assert set(body) == {"backend", "database", "ai_service"}
+    assert body["backend"] in {"OK"}
+    assert body["database"] in {"CONNECTED", "DISCONNECTED"}
+    assert body["ai_service"] in {"OK", "ERROR", "UNREACHABLE"}
+
+
 def test_cannot_self_register_as_administrator(client):
     response = client.post("/api/auth/register", json={
-        "first_name": "A", "last_name": "B", "email": "x@test.com", "password": "Password123", "role": "ADMINISTRATOR"})
+        "first_name": "A", "last_name": "B", "email": "x@test.com", "password": "Tactica#2026", "role": "ADMINISTRATOR"})
     assert response.status_code == 422
 
 
 def test_login_and_wrong_password(client, coach):
-    assert client.post("/api/auth/login", json={"email": "coach@test.com", "password": "Password123"}).status_code == 200
+    assert client.post("/api/auth/login", json={"email": "coach@test.com", "password": "Tactica#2026"}).status_code == 200
     assert client.post("/api/auth/login", json={"email": "coach@test.com", "password": "wrong-pass"}).status_code == 401
     assert client.get("/api/auth/me").status_code == 401
 
 
 def test_password_recovery_flow_is_single_use(client, coach):
     token = client.post("/api/auth/password-recovery", json={"email": "coach@test.com"}).json()["reset_token"]
-    assert client.post("/api/auth/password-reset", json={"token": token, "new_password": "NewPassword456"}).status_code == 204
-    assert client.post("/api/auth/password-reset", json={"token": token, "new_password": "Other789xyz"}).status_code == 400
-    assert client.post("/api/auth/login", json={"email": "coach@test.com", "password": "NewPassword456"}).status_code == 200
+    assert client.post("/api/auth/password-reset", json={"token": token, "new_password": "Nueva#Clave456"}).status_code == 204
+    assert client.post("/api/auth/password-reset", json={"token": token, "new_password": "Otra#Clave789"}).status_code == 400
+    assert client.post("/api/auth/login", json={"email": "coach@test.com", "password": "Nueva#Clave456"}).status_code == 200
 
 
 def test_coach_owns_one_team_and_invitation_code_format(client, coach, team):
@@ -46,12 +55,12 @@ def test_analyst_access_rules(client, team, analyst):
 def test_invalid_invitation_code(client, team):
     other = register(client, "other.analyst@test.com", "ANALYST")
     assert client.post("/api/teams/join", headers=other["headers"], json={"invitation_code": "FAKE-0000"}).status_code == 404
-    assert client.get(f"/api/teams/{team['id']}", headers=other["headers"]).status_code == 403
+    assert client.get(f"/api/teams/{team['id']}", headers=other["headers"]).status_code == 404
 
 
 def test_other_coach_cannot_access_team(client, team):
     intruder = register(client, "intruder@test.com", "COACH")
-    assert client.get(f"/api/teams/{team['id']}/matches", headers=intruder["headers"]).status_code == 403
+    assert client.get(f"/api/teams/{team['id']}/matches", headers=intruder["headers"]).status_code == 404
 
 
 def test_admin_sees_teams_but_not_tactical_content(client, admin, team, match):
