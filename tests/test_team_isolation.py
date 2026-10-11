@@ -91,6 +91,7 @@ ENDPOINTS = [
     ("POST", "/api/matches/{match}/tactical-plays", {"tactical_play_id": "{play}"}),
     ("DELETE", "/api/matches/{match}/tactical-plays/{play}", None),
     ("GET", "/api/teams/{team}/analysed-matches", None),
+    ("GET", "/api/teams/{team}/pending-reviews", None),
     ("GET", "/api/teams/{team}/tactical-plays", None),
     ("POST", "/api/teams/{team}/tactical-plays", {"name": "X", "action_type": "PRESSING", "configuration": {}}),
     ("GET", "/api/tactical-plays/{play}", None),
