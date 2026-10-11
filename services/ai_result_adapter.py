@@ -14,7 +14,7 @@ Mapping of a recommendation to ``ai_recommendations``:
 
 from __future__ import annotations
 
-from models import AIRecommendation, Detection, RecommendationIndicator, TacticalIndicator, new_id, utc_now
+from models import AIRecommendation, RecommendationIndicator, TacticalIndicator, new_id, utc_now
 from services.ai_client import AIAnalysisPayload
 
 MAX_TEXT = 255
@@ -91,8 +91,11 @@ class AIResultAdapter:
         return recommendations, links
 
     def warning_message(self) -> str | None:
-        prefix = "SIMULATION MODE. " if self._payload.mode == "SIMULATION_MODE" else ""
-        text = prefix + " | ".join(self._payload.warnings)
+        warnings = list(self._payload.warnings)
+        # Simulated results must always say so (Spanish: this text is shown to the user).
+        if self._payload.mode == "SIMULATION_MODE" and not any("SIMULACIÓN" in w.upper() for w in warnings):
+            warnings.insert(0, "MODO SIMULACIÓN: datos sintéticos, no es un análisis de video real.")
+        text = " | ".join(warnings)
         return _fit(text) if text.strip() else None
 
     def video_duration_seconds(self) -> int | None:
