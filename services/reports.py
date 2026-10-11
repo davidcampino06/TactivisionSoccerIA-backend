@@ -23,12 +23,13 @@ from sqlalchemy.orm import Session
 
 from models import (
     AIRecommendation, Match, MatchEvent, RecommendationIndicator, Report, TacticalIndicator, Team, User,
-    Video, VideoAnalysis, utc_now,
+    VideoAnalysis, utc_now,
 )
 from services.match_timeline import latest_completed_analysis, team_evolution
+from errors import DomainError
 
 
-class ReportError(ValueError):
+class ReportError(DomainError):
     pass
 
 
@@ -66,7 +67,7 @@ class ReportBuilder:
     def analysis(self, analysis: VideoAnalysis | None) -> "ReportBuilder":
         if analysis is None:
             self._snapshot["analysis"] = None
-            self._snapshot.setdefault("warnings", []).append("No completed video analysis for this match.")
+            self._snapshot.setdefault("warnings", []).append("Este partido no tiene un análisis de video completado.")
         else:
             self._snapshot["analysis"] = {
                 "id": analysis.id, "label": "SIMULATION MODE" if analysis.analysis_mode == "SIMULATION_MODE"
@@ -104,7 +105,7 @@ class ReportBuilder:
 
     def build(self) -> dict[str, Any]:
         if "report_type" not in self._snapshot:
-            raise ReportError("Report header is required.")
+            raise ReportError("Report header is required.", "REPORT_HEADER_REQUIRED")
         return self._snapshot
 
 
@@ -138,7 +139,7 @@ class ReportDirector:
 
     def analysis_report(self, team: Team, author: User, title: str, analysis: VideoAnalysis) -> dict:
         if analysis.status != "COMPLETED":
-            raise ReportError("Only completed analyses can be reported.")
+            raise ReportError("Only completed analyses can be reported.", "ANALYSIS_NOT_COMPLETED")
         match = self._db.get(Match, analysis.video.match_id)
         builder = ReportBuilder().header("VIDEO_ANALYSIS", title, team, author).match(match)
         self._analysis_sections(builder, analysis)
@@ -210,12 +211,14 @@ class ReportView(ABC):
 
 class MatchReportView(ReportView):
     def rows(self) -> list[dict]:
-        rows = [{"section": "indicator", "name": i["name"], "value": i["value"], "unit": i["unit"],
-                 "threshold": i["threshold"]} for i in self.snapshot.get("tactical_indicators", [])]
-        rows += [{"section": "possible_issue", "name": p["issue"], "value": p["confidence"], "unit": "confidence",
-                  "detail": p["evidence"], "severity": p["severity"]} for p in self.snapshot.get("possible_issues", [])]
-        rows += [{"section": "recommendation", "name": r["issue"], "value": r["confidence"], "unit": "confidence",
-                  "detail": r["recommendation"]} for r in self.snapshot.get("ai_recommendations", [])]
+        # Column names and section labels are Spanish: the CSV is opened by the coach in Excel.
+        rows = [{"seccion": "indicador", "nombre": i["name"], "valor": i["value"], "unidad": i["unit"],
+                 "umbral": i["threshold"]} for i in self.snapshot.get("tactical_indicators", [])]
+        rows += [{"seccion": "posible_problema", "nombre": p["issue"], "valor": p["confidence"], "unidad": "confianza",
+                  "detalle": p["evidence"], "severidad": SEVERITY_LABELS.get(p["severity"], p["severity"])}
+                 for p in self.snapshot.get("possible_issues", [])]
+        rows += [{"seccion": "recomendacion", "nombre": r["issue"], "valor": r["confidence"], "unidad": "confianza",
+                  "detalle": r["recommendation"]} for r in self.snapshot.get("ai_recommendations", [])]
         return rows
 
 
@@ -229,22 +232,27 @@ class EvolutionReportView(ReportView):
         opponents = [m["opponent"] for m in evolution.get("matches", [])]
         rows = []
         for trend in evolution.get("trends", []):
-            row = {"indicator": trend["indicator"], "trend": trend["trend"], "slope": trend["slope"]}
+            row = {"indicador": trend["indicator"], "tendencia": TREND_LABELS.get(trend["trend"], trend["trend"]),
+                   "pendiente": trend["slope"]}
             row.update({f"{index + 1}_{opponent}": value for index, (opponent, value)
                         in enumerate(zip(opponents, trend["values"]))})
             rows.append(row)
         return rows
 
 
+SEVERITY_LABELS = {"LOW": "baja", "MEDIUM": "media", "HIGH": "alta"}
+TREND_LABELS = {"INCREASING": "en aumento", "DECREASING": "en descenso", "STABLE": "estable"}
+
 VIEWS = {"MATCH": MatchReportView, "VIDEO_ANALYSIS": AnalysisReportView, "TEAM_EVOLUTION": EvolutionReportView}
 EXPORTERS = {"json": JsonExporter, "csv": CsvExporter}
+FILE_LABELS = {"MATCH": "partido", "VIDEO_ANALYSIS": "analisis", "TEAM_EVOLUTION": "evolucion"}
 
 
 def export_report(report: Report, export_format: str) -> tuple[str, str, str]:
     exporter_class = EXPORTERS.get(export_format)
     if exporter_class is None:
-        raise ReportError(f"Unsupported format '{export_format}'. Use: {', '.join(EXPORTERS)}")
+        raise ReportError(f"Unsupported format '{export_format}'. Use: {', '.join(EXPORTERS)}", "UNSUPPORTED_EXPORT_FORMAT")
     exporter = exporter_class()
     view = VIEWS[report.report_type](json.loads(report.snapshot_data), exporter)
-    file_name = f"report_{report.report_type.lower()}_v{report.version}.{exporter.extension}"
+    file_name = f"reporte_{FILE_LABELS.get(report.report_type, 'tactivision')}_v{report.version}.{exporter.extension}"
     return view.export(), exporter.media_type, file_name
