@@ -10,6 +10,7 @@ import sys
 
 import database
 from models import User, UserRole
+from password_policy import failed_rules
 from security import hash_password
 
 
@@ -18,6 +19,10 @@ def main() -> int:
     password = os.getenv("ADMIN_PASSWORD") or ""
     if not email or len(password) < 12:
         print("Set ADMIN_EMAIL and ADMIN_PASSWORD (min. 12 characters).")
+        return 1
+    broken = failed_rules(password, email=email)
+    if broken:
+        print("ADMIN_PASSWORD does not meet the password rules: " + ", ".join(broken))
         return 1
     if database.SessionLocal is None:
         print("DATABASE_URL is not configured.")
