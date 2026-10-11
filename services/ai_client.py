@@ -32,11 +32,31 @@ MODE_SIMULATION = "SIMULATION_MODE"
 
 
 class AIServiceError(Exception):
-    """The AI Service could not be reached or answered with an error."""
+    """The AI Service could not be reached or answered with an error.
+
+    ``str(error)`` is the technical detail (English, for the logs); ``user_message`` is what the
+    coach sees in the app (Spanish), without internal details.
+    """
+
+    default_user_message = "No se pudo completar el análisis con el servicio de IA. Intenta de nuevo."
+
+    def __init__(self, message: str, user_message: str | None = None) -> None:
+        super().__init__(message)
+        self.user_message = user_message or self.default_user_message
 
 
 class AIResponseError(AIServiceError):
     """The AI Service answered, but the payload is not valid."""
+
+    default_user_message = "La respuesta del servicio de IA no es válida; el análisis se descartó."
+
+
+def _user_message_for_status(status_code: int) -> str:
+    if status_code == 503:
+        return "El modelo de IA no está disponible en este momento. Intenta más tarde."
+    if status_code in (400, 413, 415, 422):
+        return "El servicio de IA no pudo procesar este video (formato, tamaño o contenido no válido)."
+    return AIServiceError.default_user_message
 
 
 # ------------------------------------------------------------------ validation
@@ -99,7 +119,8 @@ class AIResponseValidator:
         except ValidationError as error:
             raise AIResponseError(f"Invalid AI response: {error.error_count()} validation errors.") from error
         if payload.mode != self.expected_mode:
-            raise AIResponseError(f"Expected {self.expected_mode} but AI Service returned {payload.mode}.")
+            raise AIResponseError(f"Expected {self.expected_mode} but AI Service returned {payload.mode}.",
+                                  "El servicio de IA devolvió un tipo de análisis distinto al solicitado.")
         indicator_names = {indicator.name for indicator in payload.tactical_indicators}
         for recommendation in payload.recommendations:
             if not set(recommendation.related_indicators) <= indicator_names:
@@ -125,15 +146,18 @@ class _HttpClientBase(AIAnalysisClient):
         try:
             response = httpx.post(f"{self._base_url}{path}", headers=self._headers, timeout=self._timeout, **kwargs)
         except httpx.TimeoutException as error:
-            raise AIServiceError("AI Service timed out.") from error
+            raise AIServiceError("AI Service timed out.",
+                                 "El servicio de IA tardó demasiado. Intenta con un clip más corto (10 a 20 segundos).") from error
         except httpx.TransportError as error:
-            raise AIServiceError(f"AI Service unreachable: {error}") from error
+            raise AIServiceError(f"AI Service unreachable: {error}",
+                                 "No se pudo contactar el servicio de IA. Intenta de nuevo en unos minutos.") from error
         if response.status_code >= 400:
             try:
                 detail = response.json().get("detail", response.text)
             except ValueError:
                 detail = response.text
-            raise AIServiceError(f"AI Service error {response.status_code}: {str(detail)[:200]}")
+            raise AIServiceError(f"AI Service error {response.status_code}: {str(detail)[:200]}",
+                                 _user_message_for_status(response.status_code))
         return response.json()
 
 
@@ -144,7 +168,8 @@ class HttpVideoAnalysisClient(_HttpClientBase):
 
     def analyze(self, video_path: Path | None, options: dict) -> dict:
         if video_path is None or not video_path.exists():
-            raise AIServiceError("Video file is missing on the backend storage.")
+            raise AIServiceError("Video file is missing on the backend storage.",
+                                 "El archivo de video ya no está en el servidor; súbelo de nuevo.")
         form = {key: str(options[key]) for key in self.FORM_FIELDS if key in options}
         with video_path.open("rb") as video_file:
             return self._post("/api/analyze", data=form, files={"video": (video_path.name, video_file)})
