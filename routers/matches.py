@@ -1,9 +1,10 @@
 """Matches, match events, formations used and tactical plays included."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from database import get_db
+from errors import AppError
 from dependencies import AccessLevel, get_current_user, load_match, load_tactical_play, load_team
 from models import Formation, Match, MatchEvent, MatchFormation, MatchTacticalPlay, TacticalPlay, User
 from schemas import (
@@ -94,7 +95,7 @@ def update_event(match_id: str, event_id: str, body: MatchEventCreate, user: Use
     load_match(db, match_id, user, AccessLevel.CONTRIBUTE)
     event = db.get(MatchEvent, event_id)
     if event is None or event.match_id != match_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Event not found.")
+        raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "Event not found.")
     for field, value in body.model_dump().items():
         setattr(event, field, value)
     db.commit()
@@ -106,7 +107,7 @@ def delete_event(match_id: str, event_id: str, user: User = Depends(get_current_
     load_match(db, match_id, user, AccessLevel.CONTRIBUTE)
     event = db.get(MatchEvent, event_id)
     if event is None or event.match_id != match_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Event not found.")
+        raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "Event not found.")
     db.delete(event)
     db.commit()
 
@@ -124,7 +125,7 @@ def add_match_formation(match_id: str, body: MatchFormationRequest, user: User =
                         db: Session = Depends(get_db)):
     load_match(db, match_id, user, AccessLevel.CONTRIBUTE)
     if db.get(Formation, body.formation_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Formation not found.")
+        raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "Formation not found.")
     exists = db.query(MatchFormation).filter_by(match_id=match_id, formation_id=body.formation_id).first()
     if not exists:
         db.add(MatchFormation(match_id=match_id, formation_id=body.formation_id))
@@ -144,7 +145,18 @@ def add_match_tactical_play(match_id: str, body: MatchTacticalPlayRequest, user:
     match = load_match(db, match_id, user, AccessLevel.CONTRIBUTE)
     play = load_tactical_play(db, body.tactical_play_id, user, AccessLevel.READ)
     if play.team_id != match.team_id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Tactical play belongs to another team.")
+        raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "Tactical play belongs to another team.")
     if not db.query(MatchTacticalPlay).filter_by(match_id=match_id, tactical_play_id=play.id).first():
         db.add(MatchTacticalPlay(match_id=match_id, tactical_play_id=play.id))
         db.commit()
+
+
+@router.delete("/matches/{match_id}/tactical-plays/{play_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_match_tactical_play(match_id: str, play_id: str, user: User = Depends(get_current_user),
+                               db: Session = Depends(get_db)):
+    load_match(db, match_id, user, AccessLevel.CONTRIBUTE)
+    link = db.query(MatchTacticalPlay).filter_by(match_id=match_id, tactical_play_id=play_id).first()
+    if link is None:
+        raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "The play is not linked to this match.")
+    db.delete(link)
+    db.commit()
