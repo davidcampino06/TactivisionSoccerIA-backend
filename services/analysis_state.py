@@ -14,10 +14,12 @@ from __future__ import annotations
 from abc import ABC
 
 from models import VideoAnalysis, utc_now
+from errors import DomainError
 
 
-class InvalidStateTransition(Exception):
-    pass
+class InvalidStateTransition(DomainError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message, "INVALID_ANALYSIS_STATE")
 
 
 class AnalysisState(ABC):
@@ -51,7 +53,7 @@ class PendingState(AnalysisState):
         machine.finish(FailedState(), reason)
 
     def cancel(self, machine):
-        machine.finish(CancelledState(), "Cancelled before processing started.")
+        machine.finish(CancelledState(), "Cancelado antes de iniciar el procesamiento.")
 
 
 class ProcessingState(AnalysisState):
@@ -64,7 +66,7 @@ class ProcessingState(AnalysisState):
         machine.finish(FailedState(), reason)
 
     def cancel(self, machine):
-        machine.finish(CancelledState(), "Cancelled during processing; results discarded.")
+        machine.finish(CancelledState(), "Cancelado durante el procesamiento; los resultados se descartaron.")
 
 
 class CompletedState(AnalysisState):

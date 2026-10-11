@@ -1,10 +1,11 @@
 """Video analysis results: status, detections, tracks, indicators, player identification."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
+from errors import AppError, domain_error
 from dependencies import AccessLevel, get_current_user, load_analysis, load_player
 from models import Detection, Match, TacticalIndicator, User
 from routers.recommendations import recommendations_for_analysis
@@ -33,7 +34,7 @@ def cancel_analysis(analysis_id: str, user: User = Depends(get_current_user), db
     try:
         get_analysis_facade().cancel_analysis(db, analysis)
     except InvalidStateTransition as error:
-        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+        raise domain_error(error, status.HTTP_409_CONFLICT) from error
     return analysis_out(analysis)
 
 
@@ -105,7 +106,7 @@ def list_tracks(analysis_id: str, user: User = Depends(get_current_user), db: Se
               .filter(Detection.video_analysis_id == analysis_id, Detection.track_id.isnot(None))
               .group_by(Detection.track_id).order_by(Detection.track_id).all())
     return [
-        {"track_id": track_id, "label": f"Player Track {track_id}", "detections": count, "first_frame": first,
+        {"track_id": track_id, "label": f"Trayectoria {track_id}", "detections": count, "first_frame": first,
          "last_frame": last, "mean_confidence": round(float(confidence), 4), "player_id": player_id}
         for track_id, count, first, last, confidence, player_id in rows
     ]
@@ -122,13 +123,13 @@ def assign_track_to_player(analysis_id: str, track_id: int, body: TrackAssignmen
         player = load_player(db, body.player_id, user, AccessLevel.READ)
         match = db.get(Match, analysis.video.match_id)
         if player.team_id != match.team_id:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Player belongs to another team.")
+            raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "Player belongs to another team.")
         player_number = player.shirt_number
     updated = (db.query(Detection)
                  .filter(Detection.video_analysis_id == analysis_id, Detection.track_id == track_id)
                  .update({Detection.player_id: body.player_id, Detection.player_number: player_number},
                          synchronize_session=False))
     if updated == 0:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Track not found in this analysis.")
+        raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "Track not found in this analysis.")
     db.commit()
     return {"track_id": track_id, "player_id": body.player_id, "detections_updated": updated}
