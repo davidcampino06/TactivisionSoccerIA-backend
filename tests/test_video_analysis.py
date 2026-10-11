@@ -108,11 +108,16 @@ def test_full_analysis_is_persisted(client, coach, team, match, video, analyst):
     assert appearances[0]["analysis_id"] == analysis_id and appearances[0]["opponent"] == "Nacional"
     assert appearances[0]["tracks"] == [1] and appearances[0]["detections"] == 2
 
+    pending = client.get(f"/api/teams/{team['id']}/pending-reviews", headers=headers).json()
+    assert pending["total"] == 1 and pending["high"] == 1 and pending["matches"][0]["unreviewed"] == 1
+
     # Recommendation review workflow
     rec_url = f"/api/recommendations/{recommendation['id']}"
     assert client.patch(rec_url, headers=headers, json={"action": "review"}).json()["status"] == "REVIEWED"
     assert client.patch(rec_url, headers=headers, json={"action": "confirm"}).json()["status"] == "CONFIRMED"
     assert client.patch(rec_url, headers=headers, json={"action": "dismiss"}).status_code == 409
+    assert client.get(f"/api/teams/{team['id']}/pending-reviews", headers=headers).json() == \
+        {"total": 0, "high": 0, "matches": []}  # confirmed issues are no longer pending
 
     # Terminal state cannot be cancelled
     cancelled = client.post(f"/api/analyses/{analysis_id}/cancel", headers=headers)
