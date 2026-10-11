@@ -8,12 +8,14 @@ import logging
 import threading
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 import database
+import rls
 from config import describe_database_url, settings
 from database import get_database_status
+from errors import AppError, app_error_handler
 from routers import (
     analyses, auth, formations, insights, matches, players, recommendations, reports, tactical_plays, teams,
     users, videos,
@@ -34,10 +36,10 @@ def recover_interrupted_analyses() -> None:
     from services.analysis_state import AnalysisStateMachine
 
     try:
-        with database.SessionLocal() as db:
+        with rls.mark_system(database.SessionLocal()) as db:
             interrupted = db.query(VideoAnalysis).filter(VideoAnalysis.status == "PROCESSING").all()
             for analysis in interrupted:
-                AnalysisStateMachine(analysis).fail("Interrupted by a server restart. Start the analysis again.")
+                AnalysisStateMachine(analysis).fail("Interrumpido por un reinicio del servidor. Inicia el análisis de nuevo.")
                 analysis.video.status = "UPLOADED"
             pending_ids = [a.id for a in db.query(VideoAnalysis).filter(VideoAnalysis.status == "PENDING")]
             db.commit()
@@ -60,7 +62,27 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="TactiVision IA Backend", version="0.6.0", lifespan=lifespan)
+app = FastAPI(
+    title="TactiVision IA Backend",
+    version="0.7.0",
+    lifespan=lifespan,
+    # Swagger lists every endpoint, so it is only available outside production.
+    docs_url="/docs" if settings.enable_docs else None,
+    redoc_url="/redoc" if settings.enable_docs else None,
+    openapi_url="/openapi.json" if settings.enable_docs else None,
+)
+app.add_exception_handler(AppError, app_error_handler)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    if request.url.path.startswith("/api/auth"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 app.add_middleware(
     CORSMiddleware,
