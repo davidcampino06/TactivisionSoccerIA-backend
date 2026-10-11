@@ -3,11 +3,12 @@
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 from sqlalchemy.orm import Session
 
 from config import settings
 from database import get_db
+from errors import AppError
 from dependencies import AccessLevel, get_current_user, load_match, load_video
 from models import User, Video, VideoAnalysis
 from schemas import AnalysisRequest, VideoAnalysisOut, VideoOut
@@ -25,7 +26,7 @@ def upload_video(match_id: str, video: UploadFile = File(...), user: User = Depe
     original_name = Path(video.filename or "video").name[:200]
     extension = Path(original_name).suffix.lower()
     if extension not in ALLOWED_FORMATS:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid format. Allowed: {', '.join(ALLOWED_FORMATS)}")
+        raise AppError(status.HTTP_400_BAD_REQUEST, "INVALID_VIDEO_FORMAT", f"Invalid format. Allowed: {', '.join(ALLOWED_FORMATS)}")
 
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     stored_name = f"{uuid.uuid4()}{extension}"
@@ -38,12 +39,12 @@ def upload_video(match_id: str, video: UploadFile = File(...), user: User = Depe
             if size > max_bytes:
                 output.close()
                 target.unlink(missing_ok=True)
-                raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                                    f"Video exceeds {settings.max_video_size_mb} MB.")
+                raise AppError(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "VIDEO_TOO_LARGE",
+                               f"Video exceeds {settings.max_video_size_mb} MB.", max_mb=settings.max_video_size_mb)
             output.write(chunk)
     if size == 0:
         target.unlink(missing_ok=True)
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty file.")
+        raise AppError(status.HTTP_400_BAD_REQUEST, "EMPTY_FILE", "Empty file.")
 
     entity = Video(match_id=match_id, file_name=original_name, file_path=stored_name,
                    format=ALLOWED_FORMATS[extension], file_size=size)
@@ -67,7 +68,7 @@ def get_video(video_id: str, user: User = Depends(get_current_user), db: Session
 def delete_video(video_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     video = load_video(db, video_id, user, AccessLevel.MANAGE)
     if video.status == "ANALYZING":
-        raise HTTPException(status.HTTP_409_CONFLICT, "Cancel the running analysis first.")
+        raise AppError(status.HTTP_409_CONFLICT, "ANALYSIS_IN_PROGRESS", "Cancel the running analysis first.")
     video_file_path(video).unlink(missing_ok=True)
     db.delete(video)
     db.commit()
@@ -80,7 +81,7 @@ def start_analysis(video_id: str, body: AnalysisRequest, user: User = Depends(ge
     try:
         analysis, position = get_analysis_facade().request_analysis(db, video, body.model_dump())
     except AnalysisRequestError as error:
-        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+        raise AppError(status.HTTP_409_CONFLICT, error.code, str(error)) from error
     result = VideoAnalysisOut.model_validate(db.get(VideoAnalysis, analysis.id))
     result.queue_position = position or None
     return result
