@@ -150,7 +150,12 @@ def test_reports_comparison_and_evolution(client, coach, team, match, video):
 
     csv_export = client.get(f"/api/reports/{again['id']}/export?format=csv", headers=headers)
     assert csv_export.headers["content-type"].startswith("text/csv") and "team_a.team_width" in csv_export.text
-    assert client.get(f"/api/reports/{again['id']}/export?format=pdf", headers=headers).status_code == 400
+    assert "Ancho del equipo" in csv_export.text and "Equipo A" in csv_export.text  # Spanish labels for the coach
+    pdf_export = client.get(f"/api/reports/{again['id']}/export?format=pdf", headers=headers)
+    assert pdf_export.status_code == 200 and pdf_export.headers["content-type"] == "application/pdf"
+    assert pdf_export.content.startswith(b"%PDF") and "reporte_partido_v2.pdf" in pdf_export.headers["content-disposition"]
+    unknown = client.get(f"/api/reports/{again['id']}/export?format=docx", headers=headers)
+    assert unknown.status_code == 400 and unknown.json()["code"] == "UNSUPPORTED_EXPORT_FORMAT"
 
     other_ids = []
     for day in ("2026-09-08", "2026-09-15"):
@@ -163,11 +168,32 @@ def test_reports_comparison_and_evolution(client, coach, team, match, video):
     assert any("sin un análisis completado" in w for w in comparison["warnings"])
     assert client.get(f"/api/teams/{team['id']}/comparisons?match_ids={match['id']}", headers=headers).status_code == 400
 
+    # Evolution only uses analysed matches: with one analysed match there is nothing to plot yet
+    not_enough = client.get(f"/api/teams/{team['id']}/evolution", headers=headers)
+    assert not_enough.status_code == 400 and not_enough.json()["code"] == "EVOLUTION_MIN_MATCHES"
+    for other_id in other_ids:
+        clip = client.post(f"/api/matches/{other_id}/videos", headers=headers,
+                           files={"video": ("clip.mp4", b"fake-bytes-for-storage", "video/mp4")}).json()
+        client.post(f"/api/videos/{clip['id']}/analysis", headers=headers, json={})
+    client.post(f"/api/teams/{team['id']}/matches", headers=headers,
+                json={"opponent": "Futuro", "match_date": "2026-12-01T15:00:00"})  # scheduled, no analysis
+
     evolution = client.get(f"/api/teams/{team['id']}/evolution", headers=headers).json()
-    assert [m["match_id"] for m in evolution["matches"]][0] == match["id"]
+    assert [m["match_id"] for m in evolution["matches"]] == [match["id"], *other_ids]
+    analysed = client.get(f"/api/teams/{team['id']}/analysed-matches", headers=headers).json()
+    assert [m["match_id"] for m in analysed] == [*reversed(other_ids), match["id"]]  # newest first, no "Futuro"
+    assert {m["analysis_mode"] for m in analysed} == {"REAL_VIDEO_ANALYSIS"}
+    distance = next(t for t in evolution["trends"] if t["indicator"] == "team_a.defensive_midfield_distance")
+    assert distance["risk_direction"] == "above" and distance["threshold"] == 0.22
+    assert distance["trend"] == "STABLE" and distance["assessment"] == "STABLE"  # same fake values every match
+    assert evolution["matches"][0]["indicators"]["team_a.defensive_midfield_distance"]["status"] == "EXCEEDS"
+    width_row = next(r for r in comparison["indicators"] if r["indicator"] == "team_a.team_width")
+    assert width_row["risk_direction"] == "below" and width_row["statuses"] == ["OK", None]
     evolution_report = client.post(f"/api/teams/{team['id']}/reports", headers=headers,
                                    json={"report_type": "TEAM_EVOLUTION"})
     assert evolution_report.status_code == 201
+    evolution_pdf = client.get(f"/api/reports/{evolution_report.json()['id']}/export?format=pdf", headers=headers)
+    assert evolution_pdf.status_code == 200 and evolution_pdf.content.startswith(b"%PDF")
 
 
 def test_ai_errors_have_spanish_user_messages():
