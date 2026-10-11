@@ -1,9 +1,10 @@
 """Tactical analysis across matches (compare, evolution) and notifications."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from database import get_db
+from errors import domain_error
 from dependencies import AccessLevel, get_current_user, load_team
 from models import Team, User, UserRole
 from schemas import NotificationOut
@@ -20,7 +21,7 @@ def compare(team_id: str, match_ids: list[str] = Query(...), user: User = Depend
     try:
         return compare_matches(db, team_id, match_ids)
     except ComparisonError as error:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
+        raise domain_error(error, status.HTTP_400_BAD_REQUEST) from error
 
 
 @router.get("/teams/{team_id}/evolution")
@@ -30,7 +31,7 @@ def evolution(team_id: str, match_ids: list[str] | None = Query(default=None), l
     try:
         return team_evolution(db, team_id, match_ids, last)
     except ComparisonError as error:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
+        raise domain_error(error, status.HTTP_400_BAD_REQUEST) from error
 
 
 @router.get("/notifications", response_model=list[NotificationOut])
