@@ -90,6 +90,7 @@ ENDPOINTS = [
     ("GET", "/api/matches/{match}/tactical-plays", None),
     ("POST", "/api/matches/{match}/tactical-plays", {"tactical_play_id": "{play}"}),
     ("DELETE", "/api/matches/{match}/tactical-plays/{play}", None),
+    ("GET", "/api/teams/{team}/analysed-matches", None),
     ("GET", "/api/teams/{team}/tactical-plays", None),
     ("POST", "/api/teams/{team}/tactical-plays", {"name": "X", "action_type": "PRESSING", "configuration": {}}),
     ("GET", "/api/tactical-plays/{play}", None),
@@ -120,6 +121,8 @@ ENDPOINTS = [
     ("POST", "/api/teams/{team}/reports", {"report_type": "TEAM_EVOLUTION"}),
     ("GET", "/api/reports/{report}", None),
     ("GET", "/api/reports/{report}/export?format=json", None),
+    ("GET", "/api/reports/{report}/export?format=pdf", None),
+    ("DELETE", "/api/reports/{report}", None),
 ]
 
 
