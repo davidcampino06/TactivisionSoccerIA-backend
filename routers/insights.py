@@ -9,9 +9,16 @@ from dependencies import AccessLevel, get_current_user, load_team
 from models import Team, User, UserRole
 from schemas import NotificationOut
 from services.analysis_events import TeamNotificationInbox
-from services.match_timeline import ComparisonError, compare_matches, team_evolution
+from services.match_timeline import ComparisonError, analysed_matches, compare_matches, team_evolution
 
 router = APIRouter(prefix="/api", tags=["Tactical Analysis"])
+
+
+@router.get("/teams/{team_id}/analysed-matches")
+def list_analysed_matches(team_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Matches that already have a completed analysis (the ones that can be compared), newest first."""
+    load_team(db, team_id, user, AccessLevel.READ)
+    return analysed_matches(db, team_id)
 
 
 @router.get("/teams/{team_id}/comparisons")
