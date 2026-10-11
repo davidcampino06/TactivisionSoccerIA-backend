@@ -17,9 +17,10 @@ from sqlalchemy.orm import Session
 
 from data_structures import Stack
 from models import TacticalPlay, TacticalPlayVersion, User
+from errors import DomainError
 
 
-class VersionError(ValueError):
+class VersionError(DomainError):
     pass
 
 
@@ -71,7 +72,7 @@ def create_version(db: Session, play: TacticalPlay, user: User, patch: dict, bas
     if base_version_id:
         base = next((v for v in versions if v.id == base_version_id), None)
         if base is None:
-            raise VersionError("Base version does not belong to this tactical play.")
+            raise VersionError("Base version does not belong to this tactical play.", "NOT_FOUND")
     else:
         base = next((v for v in versions if v.is_current), versions[-1] if versions else None)
 
@@ -94,7 +95,7 @@ def activate_version(db: Session, play: TacticalPlay, version_id: str) -> Tactic
     versions = versions_of(db, play)
     target = next((v for v in versions if v.id == version_id), None)
     if target is None:
-        raise VersionError("Version not found for this tactical play.")
+        raise VersionError("Version not found for this tactical play.", "NOT_FOUND")
     _activate(versions, target)
     return target
 
@@ -103,13 +104,13 @@ def undo_version(db: Session, play: TacticalPlay) -> TacticalPlayVersion:
     versions = versions_of(db, play)
     current = next((v for v in versions if v.is_current), None)
     if current is None:
-        raise VersionError("Tactical play has no current version.")
+        raise VersionError("Tactical play has no current version.", "NO_CURRENT_VERSION")
     history: Stack[TacticalPlayVersion] = Stack(
         [v for v in versions if v.version_number <= current.version_number]
     )
     history.pop()  # current version
     if history.is_empty():
-        raise VersionError("There is no previous version to go back to.")
+        raise VersionError("There is no previous version to go back to.", "NO_PREVIOUS_VERSION")
     previous = history.peek()
     _activate(versions, previous)
     return previous
