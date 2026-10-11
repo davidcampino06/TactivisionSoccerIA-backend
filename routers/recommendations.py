@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from errors import AppError
-from dependencies import AccessLevel, get_current_user, load_match, load_recommendation
-from models import AIRecommendation, RecommendationIndicator, RecommendationStatus, TacticalIndicator, User
+from dependencies import AccessLevel, get_current_user, load_match, load_recommendation, load_team
+from models import AIRecommendation, Match, RecommendationIndicator, RecommendationStatus, TacticalIndicator, User
 from schemas import RecommendationOut, RecommendationStatusUpdate
 
 router = APIRouter(prefix="/api", tags=["AI Recommendations"])
@@ -64,3 +64,24 @@ def review_recommendation(recommendation_id: str, body: RecommendationStatusUpda
     recommendation.status = target
     db.commit()
     return _with_indicator_names(db, [recommendation])[0]
+
+
+@router.get("/teams/{team_id}/pending-reviews")
+def pending_reviews(team_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Possible issues still open (not confirmed or dismissed), grouped by match, newest match first."""
+    load_team(db, team_id, user, AccessLevel.READ)
+    open_states = (RecommendationStatus.GENERATED, RecommendationStatus.REVIEWED)
+    rows = (db.query(Match, AIRecommendation)
+              .join(AIRecommendation, AIRecommendation.match_id == Match.id)
+              .filter(Match.team_id == team_id, AIRecommendation.status.in_(open_states))
+              .order_by(Match.match_date.desc()).all())
+    grouped: dict[str, dict] = {}
+    for match, recommendation in rows:
+        entry = grouped.setdefault(match.id, {"match_id": match.id, "opponent": match.opponent,
+                                              "match_date": match.match_date.isoformat(), "open": 0, "high": 0,
+                                              "unreviewed": 0})
+        entry["open"] += 1
+        entry["high"] += recommendation.severity == "HIGH"
+        entry["unreviewed"] += recommendation.status == RecommendationStatus.GENERATED
+    matches = list(grouped.values())
+    return {"total": sum(m["open"] for m in matches), "high": sum(m["high"] for m in matches), "matches": matches}
