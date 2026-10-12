@@ -200,6 +200,8 @@ class VideoAnalysis(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
     warning_message: Mapped[str | None] = mapped_column(String(255))
+    # JSON: graph of supports between team-mates with BFS hops (AI Service, migration 0005).
+    proximity_network: Mapped[str | None] = mapped_column(Text)
 
     video: Mapped[Video] = relationship(lazy="joined")
 
