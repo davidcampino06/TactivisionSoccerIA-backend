@@ -17,8 +17,8 @@ from config import describe_database_url, settings
 from database import get_database_status
 from errors import AppError, app_error_handler
 from routers import (
-    analyses, auth, formations, insights, matches, players, recommendations, reports, tactical_plays, teams,
-    users, videos,
+    analyses, auth, formations, insights, matches, notifications, players, recommendations, reports, tactical_plays,
+    teams, users, videos,
 )
 from services.ai_client import check_ai_service_health
 from services.analysis_facade import get_analysis_facade
@@ -93,7 +93,7 @@ app.add_middleware(
 )
 
 for module in (auth, users, teams, players, matches, formations, tactical_plays, videos, analyses,
-               recommendations, reports, insights):
+               recommendations, reports, insights, notifications):
     app.include_router(module.router)
 
 
