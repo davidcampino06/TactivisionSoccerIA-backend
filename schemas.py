@@ -494,12 +494,15 @@ class ReportDetailOut(ReportOut):
     snapshot: dict[str, Any]
 
 
-class NotificationOut(BaseModel):
+class NotificationOut(ORMModel):
+    id: str
     event: str
     team_id: str
-    analysis_id: str
+    analysis_id: str | None
+    match_id: str | None
     message: str
     created_at: datetime
+    read: bool = False
 
 
 TokenResponse.model_rebuild()
