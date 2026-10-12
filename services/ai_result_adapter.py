@@ -10,9 +10,14 @@ Mapping of a recommendation to ``ai_recommendations``:
     evidence    <- numeric evidence
     confidence  <- confidence (0..1)
     severity    <- LOW / MEDIUM / HIGH
+
+The proximity network (graph + BFS of the AI) is kept whole as JSON in
+``video_analyses.proximity_network``: it is only read to draw it.
 """
 
 from __future__ import annotations
+
+import json
 
 from models import AIRecommendation, RecommendationIndicator, TacticalIndicator, new_id, utc_now
 from services.ai_client import AIAnalysisPayload
@@ -101,3 +106,7 @@ class AIResultAdapter:
     def video_duration_seconds(self) -> int | None:
         duration = self._payload.video.get("duration_seconds")
         return int(round(duration)) if isinstance(duration, (int, float)) else None
+
+    def proximity_network_json(self) -> str | None:
+        network = self._payload.proximity_network
+        return json.dumps(network.model_dump(), separators=(",", ":")) if network else None
