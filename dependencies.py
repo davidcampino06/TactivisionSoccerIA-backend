@@ -35,7 +35,7 @@ from models import (
     Video,
     VideoAnalysis,
 )
-from security import InvalidTokenError, decode_access_token
+from security import InvalidTokenError, decode_access_token, password_fingerprint
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -61,6 +61,10 @@ def get_current_user(
     user = db.get(User, payload.get("sub"))
     if user is None or not user.is_active:
         raise AppError(status.HTTP_401_UNAUTHORIZED, "SESSION_EXPIRED", "User not found or inactive.")
+    if payload.get("fp") != password_fingerprint(user.password_hash):
+        # The password changed after this token was issued: the session is no longer valid.
+        raise AppError(status.HTTP_401_UNAUTHORIZED, "SESSION_EXPIRED", "Password changed since login.",
+                       headers={"WWW-Authenticate": "Bearer"})
     rls.identify_user(db, user)  # PostgreSQL now filters every query of this request by team
     return user
 
