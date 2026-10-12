@@ -31,7 +31,7 @@ tests/               pytest contra PostgreSQL real + e2e_check.py
 |---|---|---|
 | **Facade** | `services/analysis_facade.py` · AI: `pipeline.py` | Un solo punto de entrada para todo el caso de uso "Analizar video" |
 | **State** | `services/analysis_state.py` | Estados de VideoAnalysis (PENDING→PROCESSING→COMPLETED/FAILED/CANCELLED); transiciones ilegales → 409 |
-| **Observer** | `services/analysis_events.py` | Notificar cambios de análisis y alertas tácticas HIGH sin acoplar el Facade a los receptores |
+| **Observer** | `services/analysis_events.py` | Notificar cambios de análisis, alertas tácticas HIGH y nuevos analistas sin acoplar a quien publica con quien recibe (log + tabla `notifications`) |
 | **Strategy** | AI: `tactical_analysis.py` · `services/mailer.py` | Cada familia de indicadores tácticos es intercambiable/extensible · el proveedor de correo (SMTP o Brevo) se elige por configuración |
 | **Factory Method** | `services/ai_client.py` (`create_client`) · AI: `DetectorFactory` | Crear el cliente IA / el detector (YOLO26n, YOLO11n, RT-DETR) sin depender de clases concretas |
 | **Abstract Factory** | `services/ai_client.py` (`AnalysisSourceFactory`) | Crea la FAMILIA cliente + validador coherente: datos reales nunca se validan como simulados ni al revés |
@@ -40,7 +40,7 @@ tests/               pytest contra PostgreSQL real + e2e_check.py
 | **Bridge** | `services/reports.py` (`ReportView` × `ReportExporter`) | Tipos de reporte (Match, Analysis, Evolution) y formatos (JSON, CSV) crecen por separado |
 | **Builder** | `services/reports.py` (`ReportBuilder` + `ReportDirector`) | El snapshot del reporte se arma por secciones; los 3 tipos reutilizan el mismo builder |
 | **Prototype** | `services/tactical_versions.py` | Una nueva versión de jugada táctica es un clon profundo de otra + cambios; el original no se altera |
-| **Singleton** | `singleton.py` → `AnalysisJobQueue`, `NotificationCenter`, `TeamNotificationInbox` | Una única cola/worker y un único bus de eventos por proceso |
+| **Singleton** | `singleton.py` → `AnalysisJobQueue`, `NotificationCenter` | Una única cola/worker y un único bus de eventos por proceso |
 | **Array** | listas de detecciones/indicadores; NumPy en el AI Service | Colecciones ordenadas e indexadas (frames, cajas, valores) |
 | **Stack (pila)** | `undo_version` | "Deshacer" la versión actual de una jugada vuelve a la anterior (LIFO) |
 | **Queue (cola)** | `services/analysis_queue.py` | Los análisis se procesan en orden de llegada, uno a la vez (FIFO); el usuario ve su posición |
@@ -84,7 +84,7 @@ de abstracciones).
 | Recomendaciones | `GET /api/matches/{id}/recommendations`, `PATCH /api/recommendations/{id}` (review/confirm/dismiss) |
 | Comparación | `GET /api/teams/{id}/comparisons?match_ids=a&match_ids=b` (≥2), `GET /api/teams/{id}/evolution` (≥3) |
 | Reportes | `POST/GET /api/teams/{id}/reports`, `GET /api/reports/{id}`, `GET /api/reports/{id}/export?format=json|csv|pdf` |
-| Notificaciones | `GET /api/notifications` |
+| Notificaciones | `GET /api/notifications` (`?unread_only=true`), `GET /api/notifications/unread-count`, `POST /api/notifications/{id}/read`, `POST /api/notifications/read-all` |
 
 Documentación interactiva: http://localhost:8000/docs
 
@@ -117,7 +117,7 @@ python tests/e2e_check.py ruta/a/video.mp4
 
 - Videos guardados en disco local (`UPLOAD_DIR`). En Render Free el disco es efímero: para
   producción se necesita un disco persistente o almacenamiento de objetos.
-- Notificaciones en memoria (se pierden al reiniciar). La cola también; al arrancar, los análisis
-  PROCESSING se marcan FAILED y los PENDING se re-encolan.
+- La cola de análisis vive en memoria; al arrancar, los análisis PROCESSING se marcan FAILED y los
+  PENDING se re-encolan. Las notificaciones sí se guardan en la base (migración 0004 del repo de BD).
 - La recuperación de contraseña necesita un proveedor de correo (`MAIL_PROVIDER=smtp` o `brevo`,
   ver `.env.example`). Sin él, solo funciona en desarrollo con `PASSWORD_RESET_EXPOSE_TOKEN=true`.
