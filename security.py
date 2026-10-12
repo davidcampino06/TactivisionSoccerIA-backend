@@ -48,8 +48,11 @@ def _decode(token: str, purpose: str) -> dict:
     return payload
 
 
-def create_access_token(user_id: str, role: str) -> str:
-    return _encode({"sub": user_id, "role": role, "purpose": ACCESS_TOKEN_PURPOSE},
+def create_access_token(user_id: str, role: str, password_hash: str) -> str:
+    """Session token. It carries the password fingerprint, so changing or resetting the password
+    ends every session opened with the old one (other devices included)."""
+    return _encode({"sub": user_id, "role": role, "purpose": ACCESS_TOKEN_PURPOSE,
+                    "fp": password_fingerprint(password_hash)},
                    settings.access_token_expire_minutes)
 
 
