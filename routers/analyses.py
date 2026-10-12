@@ -1,5 +1,7 @@
 """Video analysis results: status, detections, tracks, indicators, player identification."""
 
+import json
+
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -63,6 +65,7 @@ def get_result(analysis_id: str, user: User = Depends(get_current_user), db: Ses
         },
         "indicators": indicators,
         "recommendations": recommendations_for_analysis(db, analysis_id),
+        "proximity_network": json.loads(analysis.proximity_network) if analysis.proximity_network else None,
     }
 
 
