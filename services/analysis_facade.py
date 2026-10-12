@@ -143,6 +143,7 @@ class VideoAnalysisFacade:
         db.flush()
         db.add_all(links)
 
+        analysis.proximity_network = adapter.proximity_network_json()
         analysis.model_name = payload.model[:100]
         analysis.model_version = payload.model_version[:50]
         video.duration_seconds = adapter.video_duration_seconds() or video.duration_seconds

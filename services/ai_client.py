@@ -89,6 +89,31 @@ class _DetectionPayload(BaseModel):
     track_id: int | None = None
 
 
+class _NetworkNodePayload(BaseModel):
+    track_id: int
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    degree: int = Field(ge=0)
+    group: int = Field(ge=0)
+
+
+class _TeamNetworkPayload(BaseModel):
+    nodes: list[_NetworkNodePayload] = Field(max_length=40)
+    links: list[tuple[int, int]] = Field(max_length=800)
+    groups: int = Field(ge=0)
+    isolated: list[int]
+    diameter: int = Field(ge=0)
+    hops: dict[str, dict[str, int]]
+
+
+class _ProximityNetworkPayload(BaseModel):
+    """Graph of supports between team-mates computed by the AI (graph + BFS)."""
+    frame_number: int = Field(ge=0)
+    timestamp_seconds: float = Field(ge=0)
+    link_distance: float = Field(gt=0, le=1)
+    teams: dict[Literal["TEAM_A", "TEAM_B"], _TeamNetworkPayload]
+
+
 class AIAnalysisPayload(BaseModel):
     status: Literal["COMPLETED"]
     mode: Literal["REAL_VIDEO_ANALYSIS", "SIMULATION_MODE"]
@@ -101,6 +126,7 @@ class AIAnalysisPayload(BaseModel):
     detections: list[_DetectionPayload]
     tracking: list[dict[str, Any]]
     tactical_indicators: list[_IndicatorPayload]
+    proximity_network: _ProximityNetworkPayload | None = None
     possible_issues: list[dict[str, Any]]
     recommendations: list[_RecommendationPayload]
     warnings: list[str] = []

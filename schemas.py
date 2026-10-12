@@ -481,6 +481,8 @@ class AnalysisResultOut(BaseModel):
     summary: dict[str, Any]
     indicators: list[TacticalIndicatorOut]
     recommendations: list[RecommendationOut]
+    # Graph of supports between team-mates with BFS hops (None for analyses made before it existed).
+    proximity_network: dict[str, Any] | None = None
 
 
 # --------------------------------------------------------------------- reports
