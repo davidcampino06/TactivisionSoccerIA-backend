@@ -1,4 +1,4 @@
-"""Tactical analysis across matches (compare, evolution) and notifications."""
+"""Tactical analysis across matches (compare, evolution)."""
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
@@ -6,9 +6,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from errors import domain_error
 from dependencies import AccessLevel, get_current_user, load_team
-from models import Team, User, UserRole
-from schemas import NotificationOut
-from services.analysis_events import TeamNotificationInbox
+from models import User
 from services.match_timeline import ComparisonError, analysed_matches, compare_matches, team_evolution
 
 router = APIRouter(prefix="/api", tags=["Tactical Analysis"])
@@ -39,16 +37,3 @@ def evolution(team_id: str, match_ids: list[str] | None = Query(default=None), l
         return team_evolution(db, team_id, match_ids, last)
     except ComparisonError as error:
         raise domain_error(error, status.HTTP_400_BAD_REQUEST) from error
-
-
-@router.get("/notifications", response_model=list[NotificationOut])
-def notifications(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if user.role == UserRole.ADMINISTRATOR:
-        return []
-    team_id = user.team_id
-    if user.role == UserRole.COACH:
-        team = db.query(Team).filter(Team.coach_id == user.id).first()
-        team_id = team.id if team else None
-    if not team_id:
-        return []
-    return [vars(event) for event in TeamNotificationInbox().for_team(team_id)]
