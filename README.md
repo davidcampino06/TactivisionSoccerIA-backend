@@ -32,7 +32,7 @@ tests/               pytest contra PostgreSQL real + e2e_check.py
 | **Facade** | `services/analysis_facade.py` · AI: `pipeline.py` | Un solo punto de entrada para todo el caso de uso "Analizar video" |
 | **State** | `services/analysis_state.py` | Estados de VideoAnalysis (PENDING→PROCESSING→COMPLETED/FAILED/CANCELLED); transiciones ilegales → 409 |
 | **Observer** | `services/analysis_events.py` | Notificar cambios de análisis y alertas tácticas HIGH sin acoplar el Facade a los receptores |
-| **Strategy** | AI: `tactical_analysis.py` | Cada familia de indicadores tácticos es intercambiable/extensible |
+| **Strategy** | AI: `tactical_analysis.py` · `services/mailer.py` | Cada familia de indicadores tácticos es intercambiable/extensible · el proveedor de correo (SMTP o Brevo) se elige por configuración |
 | **Factory Method** | `services/ai_client.py` (`create_client`) · AI: `DetectorFactory` | Crear el cliente IA / el detector (YOLO26n, YOLO11n, RT-DETR) sin depender de clases concretas |
 | **Abstract Factory** | `services/ai_client.py` (`AnalysisSourceFactory`) | Crea la FAMILIA cliente + validador coherente: datos reales nunca se validan como simulados ni al revés |
 | **Decorator** | `RetryingAIClient`, `LoggingAIClient` | Reintentos (Render "despertando") y medición de tiempo sobre cualquier cliente, sin modificarlo |
@@ -62,6 +62,11 @@ de abstracciones).
   contenido táctico); recibe 403 en jugadores, partidos, videos, análisis y reportes.
 - Contraseñas con bcrypt; JWT firmado con `JWT_SECRET_KEY`; token de recuperación de un solo uso.
 - Logout: JWT es stateless; el cliente elimina el token (expira según `ACCESS_TOKEN_EXPIRE_MINUTES`).
+- Cada token de sesión lleva la huella de la contraseña (`fp`): al cambiarla o restablecerla, las
+  sesiones abiertas en otros dispositivos dejan de valer. `change-password` devuelve un token nuevo.
+- Recuperación: `password-recovery` responde siempre igual (no revela si el correo existe) y envía
+  el enlace `FRONTEND_URL/restablecer#token=…` en segundo plano. El token va en el fragmento `#`,
+  que el navegador nunca envía a ningún servidor.
 
 ## Endpoints principales
 
@@ -78,7 +83,7 @@ de abstracciones).
 | Análisis | `GET /api/analyses/{id}`, `/result`, `/indicators`, `/detections`, `/tracks`, `PUT /tracks/{trackId}/player`, `POST /cancel` |
 | Recomendaciones | `GET /api/matches/{id}/recommendations`, `PATCH /api/recommendations/{id}` (review/confirm/dismiss) |
 | Comparación | `GET /api/teams/{id}/comparisons?match_ids=a&match_ids=b` (≥2), `GET /api/teams/{id}/evolution` (≥3) |
-| Reportes | `POST/GET /api/teams/{id}/reports`, `GET /api/reports/{id}`, `GET /api/reports/{id}/export?format=json|csv` |
+| Reportes | `POST/GET /api/teams/{id}/reports`, `GET /api/reports/{id}`, `GET /api/reports/{id}/export?format=json|csv|pdf` |
 | Notificaciones | `GET /api/notifications` |
 
 Documentación interactiva: http://localhost:8000/docs
@@ -114,5 +119,5 @@ python tests/e2e_check.py ruta/a/video.mp4
   producción se necesita un disco persistente o almacenamiento de objetos.
 - Notificaciones en memoria (se pierden al reiniciar). La cola también; al arrancar, los análisis
   PROCESSING se marcan FAILED y los PENDING se re-encolan.
-- Recuperación de contraseña sin servicio de correo (token visible solo con
-  `PASSWORD_RESET_EXPOSE_TOKEN=true` en desarrollo). Exportación PDF pendiente (JSON y CSV listos).
+- La recuperación de contraseña necesita un proveedor de correo (`MAIL_PROVIDER=smtp` o `brevo`,
+  ver `.env.example`). Sin él, solo funciona en desarrollo con `PASSWORD_RESET_EXPOSE_TOKEN=true`.
