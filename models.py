@@ -274,3 +274,27 @@ class Report(Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     version: Mapped[int] = mapped_column(Integer, default=1)
     snapshot_data: Mapped[str] = mapped_column(Text)
+
+
+class Notification(Base):
+    """A team event shown in the bell (TactiSoccerIA-db migration 0004)."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    team_id: Mapped[str] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"))
+    event: Mapped[str] = mapped_column(String(40))
+    analysis_id: Mapped[str | None] = mapped_column(ForeignKey("video_analyses.id", ondelete="SET NULL"))
+    match_id: Mapped[str | None] = mapped_column(ForeignKey("matches.id", ondelete="SET NULL"))
+    message: Mapped[str] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
+class NotificationRead(Base):
+    """Read mark of one user on one notification. No row means unread."""
+
+    __tablename__ = "notification_reads"
+
+    notification_id: Mapped[str] = mapped_column(ForeignKey("notifications.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    read_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
