@@ -220,6 +220,19 @@ class PlayerAppearanceOut(BaseModel):
     mean_confidence: float
 
 
+class PlayerStatsOut(BaseModel):
+    """Participation of a player in the analysed videos (ranking data). Roster order."""
+    player_id: str
+    first_name: str
+    last_name: str
+    shirt_number: int | None
+    position: str | None
+    status: str
+    matches: int
+    detections: int
+    seconds: float
+
+
 # ---------------------------------------------------------------------- matches
 class MatchCreate(BaseModel):
     opponent: str = Field(min_length=1, max_length=255)
