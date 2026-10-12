@@ -72,6 +72,10 @@ class ProfileUpdate(BaseModel):
     profile_image_url: str | None = Field(default=None, max_length=255)
 
 
+class AdminUserOut(UserOut):
+    team_name: str | None = None
+
+
 class AdminUserUpdate(BaseModel):
     is_active: bool | None = None
     role: Literal["COACH", "ANALYST"] | None = None
@@ -102,6 +106,16 @@ class TeamSummaryOut(ORMModel):
     city: str | None
     is_active: bool
     created_at: datetime
+
+
+class TeamAdminOut(TeamSummaryOut):
+    """Team list for the administrator: registration data plus counts (no tactical content)."""
+
+    coach_name: str | None = None
+    analysts: int = 0
+    players: int = 0
+    matches: int = 0
+    analyses: int = 0
 
 
 class TeamOut(TeamSummaryOut):
