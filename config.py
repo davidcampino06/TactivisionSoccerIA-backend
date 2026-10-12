@@ -102,10 +102,27 @@ class Settings:
     password_reset_expire_minutes: int = field(
         default_factory=lambda: int(os.getenv("PASSWORD_RESET_EXPIRE_MINUTES", "30"))
     )
-    # There is no e-mail service yet. Only in development the reset token is returned in the response.
+    # Development only: the reset token is also returned in the API response (no e-mail needed).
     password_reset_expose_token: bool = field(
         default_factory=lambda: _env_bool("PASSWORD_RESET_EXPOSE_TOKEN", False)
     )
+    # Where the recovery e-mail link points to (the frontend).
+    frontend_url: str = field(
+        default_factory=lambda: os.getenv(
+            "FRONTEND_URL", "https://tactivision-frontend.onrender.com" if IS_PRODUCTION else "http://localhost:5173"
+        ).rstrip("/")
+    )
+    # E-mail (services/mailer.py): smtp | brevo | empty (no e-mails).
+    mail_provider: str = field(default_factory=lambda: os.getenv("MAIL_PROVIDER", "").strip().lower())
+    mail_from: str = field(default_factory=lambda: os.getenv("MAIL_FROM", "").strip())
+    mail_from_name: str = field(default_factory=lambda: os.getenv("MAIL_FROM_NAME", "TactiVision IA").strip())
+    smtp_host: str = field(default_factory=lambda: os.getenv("SMTP_HOST", "smtp.gmail.com"))
+    smtp_port: int = field(default_factory=lambda: int(os.getenv("SMTP_PORT", "587")))
+    # STARTTLS on port 587 (required by Gmail). Only a local test server should turn it off.
+    smtp_starttls: bool = field(default_factory=lambda: _env_bool("SMTP_STARTTLS", True))
+    smtp_user: str = field(default_factory=lambda: os.getenv("SMTP_USER", ""))
+    smtp_password: str = field(default_factory=lambda: os.getenv("SMTP_PASSWORD", ""))
+    brevo_api_key: str = field(default_factory=lambda: os.getenv("BREVO_API_KEY", ""))
     cors_origins: list[str] = field(
         default_factory=lambda: [
             origin.strip() for origin in os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",") if origin.strip()
