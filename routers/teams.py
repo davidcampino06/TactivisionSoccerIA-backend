@@ -12,6 +12,7 @@ from errors import AppError
 from dependencies import AccessLevel, get_current_user, load_team, require_roles
 from models import Team, User, UserRole
 from schemas import JoinTeamRequest, TeamCreate, TeamOut, TeamUpdate, UserOut
+from services.analysis_events import ANALYST_JOINED, AnalysisEvent, NotificationCenter
 
 router = APIRouter(prefix="/api/teams", tags=["Teams"])
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I to avoid confusion
@@ -70,6 +71,10 @@ def join_team(body: JoinTeamRequest, analyst: User = Depends(require_roles(UserR
         raise AppError(status.HTTP_404_NOT_FOUND, "INVALID_INVITATION_CODE", "Invalid invitation code.")
     db.get(User, analyst.id).team_id = team.id
     db.commit()
+    NotificationCenter().publish(AnalysisEvent(
+        ANALYST_JOINED, team.id, None, f"{analyst.first_name} {analyst.last_name} se unió al equipo como analista.",
+        actor_id=analyst.id,
+    ))
     return team_out(team, analyst)
 
 
