@@ -78,7 +78,7 @@ de abstracciones).
 | Auth | `POST /api/auth/register · login · logout · password-recovery · password-reset · change-password`, `GET/PUT /api/auth/me` |
 | Admin | `GET /api/admin/users`, `PATCH /api/admin/users/{id}`, `GET /api/admin/teams` |
 | Equipos | `POST /api/teams`, `GET /api/teams/mine`, `POST /api/teams/join`, `GET/PUT /api/teams/{id}`, `POST /api/teams/{id}/invitation-code`, `GET/DELETE /api/teams/{id}/analysts[/{userId}]` |
-| Jugadores | `GET/POST /api/teams/{id}/players`, `GET/PUT/DELETE /api/players/{id}`, `GET /api/players/{id}/history` |
+| Jugadores | `GET/POST /api/teams/{id}/players`, `GET/PUT/DELETE /api/players/{id}`, `GET /api/players/{id}/history`, `GET /api/players/{id}/appearances`, `GET /api/teams/{id}/player-stats` (datos del ranking) |
 | Partidos | `GET/POST /api/teams/{id}/matches`, `GET/PUT/DELETE /api/matches/{id}`, `PUT .../result`, `GET .../neighbors`, eventos, formaciones, jugadas |
 | Diseño táctico | `GET/POST /api/formations`, `GET/POST /api/teams/{id}/tactical-plays`, versiones: crear (clon), activar, `undo` |
 | Videos | `POST/GET /api/matches/{id}/videos`, `GET/DELETE /api/videos/{id}`, **`POST /api/videos/{id}/analysis`** (202) |
