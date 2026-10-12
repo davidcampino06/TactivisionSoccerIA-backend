@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
@@ -65,11 +66,44 @@ class UserOut(ORMModel):
     created_at: datetime
 
 
+PHONE_PATTERN = re.compile(r"^\+?[0-9][0-9 ()-]{6,19}$")
+
+
 class ProfileUpdate(BaseModel):
     first_name: str | None = Field(default=None, min_length=1, max_length=255)
     last_name: str | None = Field(default=None, min_length=1, max_length=255)
     phone: str | None = Field(default=None, max_length=255)
     profile_image_url: str | None = Field(default=None, max_length=255)
+
+    @field_validator("first_name", "last_name")
+    @classmethod
+    def names_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = " ".join(value.split())
+        if not value:
+            raise ValueError("must not be blank")
+        return value
+
+    @field_validator("phone")
+    @classmethod
+    def phone_format(cls, value: str | None) -> str | None:
+        """Digits with optional +, spaces, dashes and parentheses (7 to 20 characters). Empty = remove."""
+        if value is None or not value.strip():
+            return None
+        value = value.strip()
+        if not PHONE_PATTERN.match(value):
+            raise ValueError("invalid phone number")
+        return value
+
+    @field_validator("profile_image_url")
+    @classmethod
+    def https_image(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        if not value.startswith("https://"):
+            raise ValueError("the image URL must use https")
+        return value
 
 
 class AdminUserOut(UserOut):
