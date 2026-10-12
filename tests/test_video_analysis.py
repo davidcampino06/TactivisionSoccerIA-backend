@@ -92,7 +92,8 @@ def test_full_analysis_is_persisted(client, coach, team, match, video, analyst):
     assert client.get(f"/api/videos/{video['id']}", headers=headers).json()["duration_seconds"] == 12
 
     events = [n["event"] for n in client.get("/api/notifications", headers=coach["headers"]).json()]
-    assert {"ANALYSIS_QUEUED", "ANALYSIS_STARTED", "ANALYSIS_COMPLETED", "TACTICAL_ALERT"} <= set(events)
+    assert {"ANALYSIS_COMPLETED", "TACTICAL_ALERT"} <= set(events)
+    assert "ANALYSIS_QUEUED" not in events  # only logged: the analysis screen already shows it live
 
     # Correct player identification (human, no biometrics)
     player = client.post(f"/api/teams/{team['id']}/players", headers=coach["headers"],
