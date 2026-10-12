@@ -5,7 +5,7 @@ password rules (password_policy.py) and stored only as bcrypt hashes. Every erro
 ``code`` that the frontend translates to Spanish.
 """
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, status
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -24,12 +24,13 @@ from security import (
     hash_password, password_fingerprint, verify_password,
 )
 from services.login_attempts import get_login_attempt_tracker
+from services.mailer import get_mailer, password_recovery_message, send_quietly
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
 def _token_response(user: User) -> dict:
-    return {"access_token": create_access_token(user.id, user.role), "user": user}
+    return {"access_token": create_access_token(user.id, user.role, user.password_hash), "user": user}
 
 
 def _enforce_password_rules(password: str, *, email: str, first_name: str, last_name: str) -> None:
@@ -98,13 +99,22 @@ def logout(_: User = Depends(get_current_user)):
 
 
 @router.post("/password-recovery", status_code=status.HTTP_202_ACCEPTED)
-def password_recovery(body: PasswordRecoveryRequest, db: Session = Depends(get_db)):
-    response = {"message": "If the email is registered, recovery instructions were generated."}
+def password_recovery(body: PasswordRecoveryRequest, background: BackgroundTasks, db: Session = Depends(get_db)):
+    """Always the same answer, registered or not, so the endpoint cannot reveal which e-mails exist.
+    The e-mail is sent after the response (background task), so the timing does not reveal it either."""
+    response: dict = {"message": "If the email is registered, recovery instructions were sent."}
     user = db.query(User).filter(User.email == body.email.lower(), User.is_active.is_(True)).first()
-    if user and settings.password_reset_expose_token:
-        # Development only: there is no e-mail service yet.
-        response["reset_token"] = create_password_reset_token(user.id, user.password_hash)
-        response["warning"] = "DEVELOPMENT MODE: token returned in the response instead of by e-mail."
+    if user is None:
+        return response
+    token = create_password_reset_token(user.id, user.password_hash)
+    mailer = get_mailer()
+    if mailer is not None:
+        background.add_task(send_quietly, mailer,
+                            password_recovery_message(email=user.email, first_name=user.first_name, token=token))
+    if settings.password_reset_expose_token:
+        # Development only: lets the flow be tested without an e-mail account.
+        response["reset_token"] = token
+        response["warning"] = "DEVELOPMENT MODE: token returned in the response."
     return response
 
 
@@ -138,8 +148,10 @@ def update_profile(body: ProfileUpdate, user: User = Depends(get_current_user), 
     return db.get(User, user.id)
 
 
-@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/change-password", response_model=TokenResponse)
 def change_password(body: ChangePasswordRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Changes the password and returns a new session token: the old token (and any other device's)
+    stops working because it carries the fingerprint of the previous password."""
     db_user = db.get(User, user.id)
     if not verify_password(reveal_password(body.current_password), db_user.password_hash):
         raise AppError(status.HTTP_400_BAD_REQUEST, "CURRENT_PASSWORD_INCORRECT", "Current password is incorrect.")
@@ -150,3 +162,4 @@ def change_password(body: ChangePasswordRequest, user: User = Depends(get_curren
         raise AppError(status.HTTP_400_BAD_REQUEST, "PASSWORD_REUSED", "The new password must be different.")
     db_user.password_hash = hash_password(new_password)
     db.commit()
+    return _token_response(db_user)
