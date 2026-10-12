@@ -105,7 +105,8 @@ def test_change_password_rules_and_reuse(client, coach):
     assert wrong.json()["code"] == "CURRENT_PASSWORD_INCORRECT"
     ok = client.post("/api/auth/change-password", headers=headers,
                      json={"current_password": DEFAULT_PASSWORD, "new_password": "Nueva#Clave456"})
-    assert ok.status_code == 204
+    assert ok.status_code == 200
+    assert ok.json()["access_token"] and ok.json()["user"]["email"] == "coach@test.com"
 
 
 # ------------------------------------------------------------------ error codes
