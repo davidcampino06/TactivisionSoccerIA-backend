@@ -45,6 +45,8 @@ tests/               pytest contra PostgreSQL real + e2e_check.py
 | **Stack (pila)** | `undo_version` | "Deshacer" la versión actual de una jugada vuelve a la anterior (LIFO) |
 | **Queue (cola)** | `services/analysis_queue.py` | Los análisis se procesan en orden de llegada, uno a la vez (FIFO); el usuario ve su posición |
 | **Lista doblemente enlazada** | `services/match_timeline.py` | Línea de tiempo de partidos: anterior/siguiente y deltas entre partidos consecutivos (evolución) |
+| **Tabla hash** | `data_structures.HashTable` → `services/login_attempts.py` | Intentos fallidos por correo en O(1) promedio para bloquear la cuenta 15 minutos |
+| **Cola de prioridad (heap)** | `data_structures.PriorityQueue` → `services/review_priority.py` | Los posibles problemas de la IA se revisan del más urgente al menos urgente (gravedad, sin revisar, confianza) |
 
 Principios OOP/SOLID: encapsulamiento (`TeamAccessPolicy`, `AnalysisStateMachine`), abstracción
 (`AIAnalysisClient`, `ReportExporter`, `ObjectDetector`), polimorfismo (estados, estrategias,
@@ -81,7 +83,7 @@ de abstracciones).
 | Diseño táctico | `GET/POST /api/formations`, `GET/POST /api/teams/{id}/tactical-plays`, versiones: crear (clon), activar, `undo` |
 | Videos | `POST/GET /api/matches/{id}/videos`, `GET/DELETE /api/videos/{id}`, **`POST /api/videos/{id}/analysis`** (202) |
 | Análisis | `GET /api/analyses/{id}`, `/result`, `/indicators`, `/detections`, `/tracks`, `PUT /tracks/{trackId}/player`, `POST /cancel` |
-| Recomendaciones | `GET /api/matches/{id}/recommendations`, `PATCH /api/recommendations/{id}` (review/confirm/dismiss) |
+| Recomendaciones | `GET /api/matches/{id}/recommendations`, `PATCH /api/recommendations/{id}` (review/confirm/dismiss), `GET /api/teams/{id}/review-queue` (heap) |
 | Comparación | `GET /api/teams/{id}/comparisons?match_ids=a&match_ids=b` (≥2), `GET /api/teams/{id}/evolution` (≥3) |
 | Reportes | `POST/GET /api/teams/{id}/reports`, `GET /api/reports/{id}`, `GET /api/reports/{id}/export?format=json|csv|pdf` |
 | Notificaciones | `GET /api/notifications` (`?unread_only=true`), `GET /api/notifications/unread-count`, `POST /api/notifications/{id}/read`, `POST /api/notifications/read-all` |
