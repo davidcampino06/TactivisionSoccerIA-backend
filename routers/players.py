@@ -9,7 +9,7 @@ from errors import AppError
 from dependencies import AccessLevel, get_current_user, load_player, load_team
 from models import Detection, Match, Player, PlayerTeamHistory, User, Video, VideoAnalysis, utc_now
 from schemas import (
-    PlayerAppearanceOut, PlayerCreate, PlayerHistoryOut, PlayerOut, PlayerRemoveRequest, PlayerUpdate,
+    PlayerAppearanceOut, PlayerCreate, PlayerHistoryOut, PlayerOut, PlayerRemoveRequest, PlayerStatsOut, PlayerUpdate,
 )
 
 router = APIRouter(prefix="/api", tags=["Players"])
@@ -125,3 +125,37 @@ def player_appearances(player_id: str, user: User = Depends(get_current_user), d
                             detections=count, mean_confidence=round(float(confidence or 0), 4))
         for analysis_id, match_id, opponent, match_date, mode, tracks, count, confidence in rows
     ]
+
+
+@router.get("/teams/{team_id}/player-stats", response_model=list[PlayerStatsOut])
+def player_stats(team_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Participation of every current player in the analysed videos (the data of the ranking).
+
+    Only tracks that a person linked to a player count. Seconds on video = for each track of each
+    analysis, last minus first detection time; a player can have several tracks per analysis."""
+    load_team(db, team_id, user, AccessLevel.READ)
+    spans = (db.query(Detection.player_id.label("player_id"), Detection.video_analysis_id.label("analysis_id"),
+                      (func.max(Detection.timestamp) - func.min(Detection.timestamp)).label("seconds"),
+                      func.count(Detection.id).label("detections"))
+               .join(VideoAnalysis, VideoAnalysis.id == Detection.video_analysis_id)
+               .join(Video, Video.id == VideoAnalysis.video_id)
+               .join(Match, Match.id == Video.match_id)
+               .filter(Match.team_id == team_id, Detection.player_id.isnot(None))
+               .group_by(Detection.player_id, Detection.video_analysis_id, Detection.track_id)
+               .subquery())
+    totals = {row.player_id: row for row in
+              db.query(spans.c.player_id, func.count(func.distinct(spans.c.analysis_id)).label("matches"),
+                       func.sum(spans.c.detections).label("detections"), func.sum(spans.c.seconds).label("seconds"))
+                .group_by(spans.c.player_id).all()}
+    players = (db.query(Player).filter(Player.team_id == team_id, Player.status != "INACTIVE")
+                 .order_by(Player.shirt_number.is_(None), Player.shirt_number, Player.last_name).all())
+    result = []
+    for player in players:
+        row = totals.get(player.id)
+        result.append(PlayerStatsOut(
+            player_id=player.id, first_name=player.first_name, last_name=player.last_name,
+            shirt_number=player.shirt_number, position=player.position, status=player.status,
+            matches=row.matches if row else 0, detections=int(row.detections) if row else 0,
+            seconds=round(float(row.seconds or 0), 2) if row else 0.0,
+        ))
+    return result
