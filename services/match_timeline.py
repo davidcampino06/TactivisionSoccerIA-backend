@@ -23,7 +23,7 @@ class ComparisonError(DomainError):
 
 # Indicators whose risk is a LOW value (the AI service flags them when value <= threshold).
 # For every other indicator with a threshold the risk is a HIGH value (value >= threshold).
-RISK_WHEN_LOW = {"team_width", "defensive_line_position"}
+RISK_WHEN_LOW = {"team_width", "defensive_line_position", "network_average_links"}
 
 
 def risk_direction(indicator_name: str) -> str:
