@@ -1,5 +1,10 @@
 # TactivisionSoccerIA-backend
 
+[![CI](https://github.com/davidcampino06/TactivisionSoccerIA-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/davidcampino06/TactivisionSoccerIA-backend/actions/workflows/ci.yml)
+
+Integración continua (GitHub Actions, `.github/workflows/ci.yml`): en cada push a `main` y en cada
+pull request se ejecutan pruebas con PostgreSQL real y Row-Level Security.
+
 Backend de **TactiVision IA** (Python + FastAPI + SQLAlchemy + PostgreSQL/Neon).
 
 ```
