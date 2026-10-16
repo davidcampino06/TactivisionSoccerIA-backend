@@ -12,6 +12,7 @@ from config import settings
 from database import get_db
 from dependencies import get_current_user
 from errors import AppError
+from log_setup import mask_email, security_log
 from models import User
 from password_crypto import public_key_spki_base64, reveal_password
 from password_policy import PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, failed_rules
@@ -63,6 +64,7 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
                 phone=body.phone, role=body.role, password_hash=hash_password(password))
     db.add(user)
     db.commit()
+    security_log.info("Account created user=%s role=%s", user.id, user.role)
     return _token_response(user)
 
 
@@ -72,6 +74,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     tracker = get_login_attempt_tracker()
     locked_seconds = tracker.seconds_locked(email)
     if locked_seconds:
+        security_log.warning("Login refused, account locked for %s s: %s", locked_seconds, mask_email(email))
         raise AppError(status.HTTP_429_TOO_MANY_REQUESTS, "ACCOUNT_LOCKED",
                        "Too many failed attempts. Try again later.",
                        headers={"Retry-After": str(locked_seconds)}, retry_after_seconds=locked_seconds)
@@ -80,16 +83,20 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == email).first()
     if user is None or not verify_password(password, user.password_hash):
         remaining = tracker.record_failure(email)
+        security_log.warning("Login failed for %s (%s attempts left)", mask_email(email), remaining)
         if remaining == 0:
             seconds = tracker.seconds_locked(email)
+            security_log.warning("Account locked for %s s after repeated failures: %s", seconds, mask_email(email))
             raise AppError(status.HTTP_429_TOO_MANY_REQUESTS, "ACCOUNT_LOCKED",
                            "Too many failed attempts. Try again later.",
                            headers={"Retry-After": str(seconds)}, retry_after_seconds=seconds)
         raise AppError(status.HTTP_401_UNAUTHORIZED, "INVALID_CREDENTIALS", "Invalid email or password.",
                        remaining_attempts=remaining)
     if not user.is_active:
+        security_log.warning("Login refused, account disabled: user=%s", user.id)
         raise AppError(status.HTTP_403_FORBIDDEN, "ACCOUNT_DISABLED", "Account is disabled.")
     tracker.record_success(email)
+    security_log.info("Login ok user=%s role=%s", user.id, user.role)
     return _token_response(user)
 
 
@@ -107,6 +114,7 @@ def password_recovery(body: PasswordRecoveryRequest, background: BackgroundTasks
     if user is None:
         return response
     token = create_password_reset_token(user.id, user.password_hash)
+    security_log.info("Password recovery requested user=%s", user.id)
     mailer = get_mailer()
     if mailer is not None:
         background.add_task(send_quietly, mailer,
@@ -132,6 +140,7 @@ def password_reset(body: PasswordResetRequest, db: Session = Depends(get_db)):
     user.password_hash = hash_password(new_password)
     db.commit()
     get_login_attempt_tracker().record_success(user.email)
+    security_log.info("Password reset with recovery link user=%s", user.id)
 
 
 @router.get("/me", response_model=UserOut)
@@ -162,4 +171,5 @@ def change_password(body: ChangePasswordRequest, user: User = Depends(get_curren
         raise AppError(status.HTTP_400_BAD_REQUEST, "PASSWORD_REUSED", "The new password must be different.")
     db_user.password_hash = hash_password(new_password)
     db.commit()
+    security_log.info("Password changed user=%s (other sessions closed)", db_user.id)
     return _token_response(db_user)
