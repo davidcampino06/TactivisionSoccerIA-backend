@@ -12,6 +12,9 @@ Frontend → Backend → PostgreSQL
 Frontend → Backend → AI Service      (el Frontend NUNCA llama al AI Service)
 ```
 
+Diagramas UML del sistema completo (casos de uso, despliegue, componentes, clases, estados y
+secuencias): [`docs/UML.md`](docs/UML.md).
+
 ## Estructura
 
 ```
@@ -94,6 +97,20 @@ de abstracciones).
 | Notificaciones | `GET /api/notifications` (`?unread_only=true`), `GET /api/notifications/unread-count`, `POST /api/notifications/{id}/read`, `POST /api/notifications/read-all` |
 
 Documentación interactiva: http://localhost:8000/docs
+
+## Logs
+
+Formato único `hora NIVEL logger: mensaje` (`log_setup.py`). Un filtro reescribe cada línea antes de
+escribirla y cambia por `[REDACTED]` contraseñas, tokens JWT, cabeceras `Authorization`, contraseñas
+cifradas (`rsa:...`), hashes bcrypt, claves de Brevo y la contraseña dentro de una URL de base de datos.
+Los eventos de seguridad van al logger `tactivision.security` e identifican al usuario por su id; el
+correo solo aparece enmascarado (`m***@club.com`):
+
+| Evento | Nivel |
+|---|---|
+| Cuenta creada, inicio de sesión correcto, recuperación pedida, contraseña cambiada o restablecida | INFO |
+| Inicio de sesión fallido (con intentos restantes), cuenta bloqueada, cuenta desactivada | WARNING |
+| Cambio de rol, activación o desactivación de un usuario por el administrador | INFO |
 
 ## Ejecutar localmente
 

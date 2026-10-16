@@ -86,6 +86,7 @@ class AIResultAdapter:
                 severity=item.severity,
                 confidence=round(item.confidence, 4),
                 evidence=_fit(item.evidence),
+                team=item.team,
             )
             recommendations.append(entity)
             for indicator_name in item.related_indicators:

@@ -14,6 +14,7 @@ import rls
 from config import settings
 from database import get_db, get_database_status
 from errors import AppError
+from log_setup import security_log
 from dependencies import require_roles
 from models import Match, Player, Team, User, UserRole, Video, VideoAnalysis, utc_now
 from schemas import AdminUserOut, AdminUserUpdate, TeamAdminOut
@@ -59,8 +60,10 @@ def update_user(user_id: str, body: AdminUserUpdate, admin: User = Depends(admin
         owns_team = db.query(Team).filter(Team.coach_id == user.id).first()
         if owns_team or user.team_id:
             raise AppError(status.HTTP_409_CONFLICT, "ROLE_CHANGE_TEAM_LINKED", "Cannot change the role of a user linked to a team.")
+        security_log.info("Admin %s changed the role of user=%s: %s -> %s", admin.id, user.id, user.role, body.role)
         user.role = body.role
-    if body.is_active is not None:
+    if body.is_active is not None and body.is_active != user.is_active:
+        security_log.info("Admin %s %s user=%s", admin.id, "activated" if body.is_active else "deactivated", user.id)
         user.is_active = body.is_active
     db.commit()
     by_id, by_coach = _team_names(db)
