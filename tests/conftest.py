@@ -43,11 +43,18 @@ TABLES = ("recommendation_indicators, ai_recommendations, tactical_indicators, d
 
 @pytest.fixture(scope="session", autouse=True)
 def schema():
-    with database.engine.begin() as connection:
-        connection.exec_driver_sql("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-        connection.exec_driver_sql(SCHEMA_PATH.read_text())
-        for migration in sorted(MIGRATIONS_DIR.glob("[0-9][0-9][0-9][0-9]_*.sql")):
-            connection.exec_driver_sql(migration.read_text())
+    # The SQL files go straight to the driver, without parameters, exactly like
+    # scripts/apply_migrations.py does: a "%" inside PL/pgSQL (format, RAISE) is plain text.
+    raw = database.engine.raw_connection()
+    try:
+        with raw.cursor() as cursor:
+            cursor.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+            cursor.execute(SCHEMA_PATH.read_text())
+            for migration in sorted(MIGRATIONS_DIR.glob("[0-9][0-9][0-9][0-9]_*.sql")):
+                cursor.execute(migration.read_text())
+        raw.commit()
+    finally:
+        raw.close()
     yield
 
 
