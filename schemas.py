@@ -405,6 +405,8 @@ class VideoOut(ORMModel):
     duration_seconds: int | None
     uploaded_at: datetime
     status: str
+    # False when the server no longer has the file (ephemeral disk): a new real analysis needs it again.
+    file_available: bool = True
 
 
 class AnalysisRequest(BaseModel):
