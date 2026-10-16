@@ -70,6 +70,7 @@ class _IndicatorPayload(BaseModel):
 class _RecommendationPayload(BaseModel):
     issue_id: str
     title: str
+    team: Literal["TEAM_A", "TEAM_B", "MATCH"] | None = None
     recommendation: str
     evidence: str
     confidence: float = Field(ge=0, le=1)
