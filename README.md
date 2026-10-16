@@ -86,7 +86,7 @@ de abstracciones).
 | Jugadores | `GET/POST /api/teams/{id}/players`, `GET/PUT/DELETE /api/players/{id}`, `GET /api/players/{id}/history`, `GET /api/players/{id}/appearances`, `GET /api/teams/{id}/player-stats` (datos del ranking) |
 | Partidos | `GET/POST /api/teams/{id}/matches`, `GET/PUT/DELETE /api/matches/{id}`, `PUT .../result`, `GET .../neighbors`, eventos, formaciones, jugadas |
 | Diseño táctico | `GET/POST /api/formations`, `GET/POST /api/teams/{id}/tactical-plays`, versiones: crear (clon), activar, `undo` |
-| Videos | `POST/GET /api/matches/{id}/videos`, `GET/DELETE /api/videos/{id}`, **`POST /api/videos/{id}/analysis`** (202) |
+| Videos | `POST/GET /api/matches/{id}/videos`, `GET/DELETE /api/videos/{id}`, `PUT /api/videos/{id}/file` (volver a subir el archivo), **`POST /api/videos/{id}/analysis`** (202) |
 | Análisis | `GET /api/analyses/{id}`, `/result` (incluye la red de cercanía: grafo + BFS de la IA), `/indicators`, `/detections`, `/tracks`, `PUT /tracks/{trackId}/player`, `POST /cancel` |
 | Recomendaciones | `GET /api/matches/{id}/recommendations`, `PATCH /api/recommendations/{id}` (review/confirm/dismiss), `GET /api/teams/{id}/review-queue` (heap) |
 | Comparación | `GET /api/teams/{id}/comparisons?match_ids=a&match_ids=b` (≥2), `GET /api/teams/{id}/evolution` (≥3) |
@@ -122,8 +122,11 @@ python tests/e2e_check.py ruta/a/video.mp4
 
 ## Limitaciones actuales
 
-- Videos guardados en disco local (`UPLOAD_DIR`). En Render Free el disco es efímero: para
-  producción se necesita un disco persistente o almacenamiento de objetos.
+- Los videos se guardan en `UPLOAD_DIR`. En Render (plan gratuito) ese disco se borra al reiniciar o
+  redesplegar: los análisis ya hechos se conservan en la base, y cada video indica `file_available`.
+  Si es `false`, la app desactiva el análisis real y ofrece volver a subir el archivo (`PUT /api/videos/{id}/file`),
+  que conserva el mismo video y su historial de análisis. Para producción real: disco persistente o
+  almacenamiento de objetos.
 - La cola de análisis vive en memoria; al arrancar, los análisis PROCESSING se marcan FAILED y los
   PENDING se re-encolan. Las notificaciones sí se guardan en la base (migración 0004 del repo de BD).
 - La recuperación de contraseña necesita un proveedor de correo (`MAIL_PROVIDER=smtp` o `brevo`,
