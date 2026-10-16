@@ -255,6 +255,8 @@ class AIRecommendation(Base):
     evidence: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     status: Mapped[str] = mapped_column(String(50), default=RecommendationStatus.GENERATED)
+    # TEAM_A, TEAM_B or MATCH (match-level metric); None for analyses stored before migration 0011.
+    team: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
 
 class RecommendationIndicator(Base):
