@@ -97,6 +97,9 @@ Documentación interactiva: http://localhost:8000/docs
 
 ## Ejecutar localmente
 
+Versión de Python: **3.13**, fijada en `.python-version`. Render la usa al desplegar (si el servicio no
+tiene la variable `PYTHON_VERSION`, que tendría prioridad) y es la misma de GitHub Actions.
+
 ```bash
 cd TactivisionSoccerIA-backend
 python -m venv .venv && .venv\Scripts\activate          # Linux/Mac: source .venv/bin/activate
