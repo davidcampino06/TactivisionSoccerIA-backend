@@ -28,7 +28,8 @@ def fake_payload(mode="REAL_VIDEO_ANALYSIS"):
         "recommendations": [{
             "issue_id": "x", "title": "Possible tactical issue: excessive distance between defensive and midfield lines",
             "recommendation": "Review the distance between defensive and midfield lines.", "evidence": "0.31 > 0.22",
-            "confidence": 0.71, "severity": "HIGH", "related_indicators": ["team_a.defensive_midfield_distance"]}],
+            "confidence": 0.71, "severity": "HIGH", "related_indicators": ["team_a.defensive_midfield_distance"],
+            "team": "TEAM_A"}],
         "warnings": ["Attack direction provided."],
     }
 
@@ -89,6 +90,7 @@ def test_full_analysis_is_persisted(client, coach, team, match, video, analyst):
     assert len(result["indicators"]) == 2
     recommendation = result["recommendations"][0]
     assert recommendation["indicator_names"] == ["team_a.defensive_midfield_distance"]
+    assert recommendation["team"] == "TEAM_A"  # stored, so two teams with the same issue can be told apart
     assert client.get(f"/api/videos/{video['id']}", headers=headers).json()["duration_seconds"] == 12
 
     events = [n["event"] for n in client.get("/api/notifications", headers=coach["headers"]).json()]
@@ -260,3 +262,14 @@ def test_lost_file_is_reported_and_can_be_uploaded_again(client, coach, analyst,
 
     second = client.post(f"/api/videos/{video['id']}/analysis", headers=h, json={})
     assert second.status_code == 202, second.text
+
+
+def test_recommendation_without_team_is_still_accepted(client, coach, video):
+    """An AI Service older than this change sends no team: the analysis still completes, team = None."""
+    payload = fake_payload()
+    del payload["recommendations"][0]["team"]
+    FakeClient.response = payload
+    started = client.post(f"/api/videos/{video['id']}/analysis", headers=coach["headers"], json={})
+    result = client.get(f"/api/analyses/{started.json()['id']}/result", headers=coach["headers"]).json()
+    assert result["analysis"]["status"] == "COMPLETED"
+    assert result["recommendations"][0]["team"] is None
