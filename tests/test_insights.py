@@ -10,6 +10,11 @@ def test_risk_direction_matches_the_ai_rules():
     assert risk_direction("team_b.team_width") == "below"
     assert risk_direction("team_a.defensive_line_position") == "below"
     assert risk_direction("max_zone_numerical_difference") == "above"
+    # Possession phase indicators (AI 0.6): too few pressers, too narrow, nobody ahead of the ball.
+    for name in ("team_b.pressure_on_ball", "team_a.attacking_width", "team_a.players_ahead_of_ball"):
+        assert risk_direction(name) == "below"
+    assert threshold_status("team_b.pressure_on_ball", 0.2, 0.5) == "EXCEEDS"
+    assert threshold_status("team_a.attacking_width", 0.5, 0.35) == "OK"
 
 
 @pytest.mark.parametrize("name, value, threshold, expected", [

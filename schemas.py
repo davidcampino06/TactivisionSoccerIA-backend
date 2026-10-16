@@ -470,6 +470,7 @@ class RecommendationOut(ORMModel):
     evidence: str
     created_at: datetime
     status: str
+    team: str | None = None
     indicator_names: list[str] = []
 
 

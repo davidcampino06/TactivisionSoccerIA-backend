@@ -15,6 +15,7 @@ import database
 import rls
 from config import describe_database_url, settings
 from database import get_database_status
+from log_setup import configure_logging
 from errors import AppError, app_error_handler
 from routers import (
     analyses, auth, formations, insights, matches, notifications, players, recommendations, reports, tactical_plays,
@@ -24,7 +25,7 @@ from services.ai_client import check_ai_service_health
 from services.analysis_facade import get_analysis_facade
 from services.analysis_queue import AnalysisJob
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+configure_logging()
 logger = logging.getLogger("tactivision.backend")
 
 
