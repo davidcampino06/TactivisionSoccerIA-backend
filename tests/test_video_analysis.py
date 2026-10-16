@@ -221,3 +221,42 @@ def test_missing_video_file_returns_code(client, coach, video):
     response = client.post(f"/api/videos/{video['id']}/analysis", headers=coach["headers"], json={})
     assert response.status_code == 409
     assert response.json()["code"] == "VIDEO_FILE_MISSING"
+
+
+def test_lost_file_is_reported_and_can_be_uploaded_again(client, coach, analyst, match, video):
+    """Ephemeral disk (Render free plan): the file disappears, the analyses stay, the file can come back."""
+    import database
+    import rls
+    from conftest import register
+    from models import Video
+    from services.analysis_facade import video_file_path
+
+    h = coach["headers"]
+    first = client.post(f"/api/videos/{video['id']}/analysis", headers=h, json={}).json()
+    assert client.get(f"/api/videos/{video['id']}", headers=h).json()["file_available"] is True
+
+    with rls.mark_system(database.SessionLocal()) as db:
+        old_path = video_file_path(db.get(Video, video["id"]))
+    old_path.unlink()
+    assert client.get(f"/api/videos/{video['id']}", headers=h).json()["file_available"] is False
+    listed = client.get(f"/api/matches/{match['id']}/videos", headers=h).json()
+    assert [item["file_available"] for item in listed] == [False]
+
+    # Only people of the team can upload it again, and only a valid video.
+    outsider = register(client, "coach.c@club.com", "COACH")["headers"]
+    files = {"video": ("again.mp4", b"other-bytes", "video/mp4")}
+    assert client.put(f"/api/videos/{video['id']}/file", headers=outsider, files=files).status_code == 404
+    bad = client.put(f"/api/videos/{video['id']}/file", headers=h, files={"video": ("notes.txt", b"x", "text/plain")})
+    assert bad.json()["code"] == "INVALID_VIDEO_FORMAT"
+
+    # The analyst of the team uploads it again: same video, same analyses, file back on disk.
+    again = client.put(f"/api/videos/{video['id']}/file", headers=analyst["headers"], files=files)
+    assert again.status_code == 200, again.text
+    body = again.json()
+    assert body["id"] == video["id"] and body["file_available"] is True
+    assert body["file_name"] == "again.mp4" and body["file_size"] == len(b"other-bytes")
+    history = client.get(f"/api/videos/{video['id']}/analyses", headers=h).json()
+    assert first["id"] in [item["id"] for item in history]
+
+    second = client.post(f"/api/videos/{video['id']}/analysis", headers=h, json={})
+    assert second.status_code == 202, second.text
