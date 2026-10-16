@@ -19,11 +19,9 @@ ALLOWED_FORMATS = {".mp4": "MP4", ".mov": "MOV", ".avi": "AVI", ".mkv": "MKV", "
 CHUNK_BYTES = 1024 * 1024
 
 
-@router.post("/matches/{match_id}/videos", response_model=VideoOut, status_code=status.HTTP_201_CREATED)
-def upload_video(match_id: str, video: UploadFile = File(...), user: User = Depends(get_current_user),
-                 db: Session = Depends(get_db)):
-    load_match(db, match_id, user, AccessLevel.CONTRIBUTE)
-    original_name = Path(video.filename or "video").name[:200]
+def _store_upload(upload: UploadFile) -> tuple[str, str, str, int]:
+    """Saves the uploaded file in UPLOAD_DIR in chunks. Returns (original name, stored name, format, size)."""
+    original_name = Path(upload.filename or "video").name[:200]
     extension = Path(original_name).suffix.lower()
     if extension not in ALLOWED_FORMATS:
         raise AppError(status.HTTP_400_BAD_REQUEST, "INVALID_VIDEO_FORMAT", f"Invalid format. Allowed: {', '.join(ALLOWED_FORMATS)}")
@@ -34,7 +32,7 @@ def upload_video(match_id: str, video: UploadFile = File(...), user: User = Depe
     max_bytes = settings.max_video_size_mb * 1024 * 1024
     size = 0
     with target.open("wb") as output:
-        while chunk := video.file.read(CHUNK_BYTES):
+        while chunk := upload.file.read(CHUNK_BYTES):
             size += len(chunk)
             if size > max_bytes:
                 output.close()
@@ -45,23 +43,56 @@ def upload_video(match_id: str, video: UploadFile = File(...), user: User = Depe
     if size == 0:
         target.unlink(missing_ok=True)
         raise AppError(status.HTTP_400_BAD_REQUEST, "EMPTY_FILE", "Empty file.")
+    return original_name, stored_name, ALLOWED_FORMATS[extension], size
 
-    entity = Video(match_id=match_id, file_name=original_name, file_path=stored_name,
-                   format=ALLOWED_FORMATS[extension], file_size=size)
+
+def video_out(video: Video) -> VideoOut:
+    """The video plus whether its file is still on this server's disk.
+
+    On hosts with an ephemeral disk (Render free plan) uploaded files disappear on every restart or
+    redeploy. The analyses already made are kept in the database; only a NEW real analysis needs the
+    file, so the app tells the user and offers to upload it again."""
+    out = VideoOut.model_validate(video)
+    out.file_available = video_file_path(video).is_file()
+    return out
+
+
+@router.post("/matches/{match_id}/videos", response_model=VideoOut, status_code=status.HTTP_201_CREATED)
+def upload_video(match_id: str, video: UploadFile = File(...), user: User = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    load_match(db, match_id, user, AccessLevel.CONTRIBUTE)
+    original_name, stored_name, video_format, size = _store_upload(video)
+    entity = Video(match_id=match_id, file_name=original_name, file_path=stored_name, format=video_format, file_size=size)
     db.add(entity)
     db.commit()
-    return entity
+    return video_out(entity)
+
+
+@router.put("/videos/{video_id}/file", response_model=VideoOut)
+def replace_video_file(video_id: str, video: UploadFile = File(...), user: User = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    """Uploads the file of an existing video again (after the server lost it). Its analyses are kept."""
+    entity = load_video(db, video_id, user, AccessLevel.CONTRIBUTE)
+    if entity.status == "ANALYZING":
+        raise AppError(status.HTTP_409_CONFLICT, "ANALYSIS_IN_PROGRESS", "Wait until the running analysis finishes.")
+    original_name, stored_name, video_format, size = _store_upload(video)
+    old_file = video_file_path(entity)
+    entity.file_name, entity.file_path, entity.format, entity.file_size = original_name, stored_name, video_format, size
+    db.commit()
+    old_file.unlink(missing_ok=True)
+    return video_out(entity)
 
 
 @router.get("/matches/{match_id}/videos", response_model=list[VideoOut])
 def list_videos(match_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     load_match(db, match_id, user, AccessLevel.READ)
-    return db.query(Video).filter(Video.match_id == match_id).order_by(Video.uploaded_at.desc()).all()
+    return [video_out(video) for video in
+            db.query(Video).filter(Video.match_id == match_id).order_by(Video.uploaded_at.desc())]
 
 
 @router.get("/videos/{video_id}", response_model=VideoOut)
 def get_video(video_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return load_video(db, video_id, user, AccessLevel.READ)
+    return video_out(load_video(db, video_id, user, AccessLevel.READ))
 
 
 @router.delete("/videos/{video_id}", status_code=status.HTTP_204_NO_CONTENT)
