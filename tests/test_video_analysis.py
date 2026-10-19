@@ -296,3 +296,34 @@ def test_invalid_or_missing_team_colours_are_left_empty(client, coach, video):
     analysis = client.get(f"/api/analyses/{started.json()['id']}/result", headers=coach["headers"]).json()["analysis"]
     assert analysis["status"] == "COMPLETED"
     assert (analysis["team_a_color"], analysis["team_b_color"]) == (None, None)
+
+
+def test_each_issue_keeps_its_plain_explanation_and_example_frame(client, coach, video):
+    """The coach can open an issue and read it in football words, with the frame that shows it (0013)."""
+    payload = fake_payload()
+    payload["recommendations"][0]["explanation"] = {
+        "seen": "Mientras el rival tenía el balón (unos 2 segundos de juego), en el Equipo A ...",
+        "meaning": "Quedó un hueco grande entre la defensa y el mediocampo.",
+        "coach": "Adelantar la línea defensiva.",
+        "example": {"frame_number": 40, "team": "TEAM_A", "players": [{"id": 1, "team": "TEAM_A", "x": 0.2, "y": 0.5}],
+                    "ball": [0.6, 0.4], "overlay": {"kind": "lines", "lines": [0.2, 0.45, 0.6], "gap": [0.2, 0.45]}},
+        "unexpected": "not stored",
+    }
+    FakeClient.response = payload
+    started = client.post(f"/api/videos/{video['id']}/analysis", headers=coach["headers"], json={})
+    recommendation = client.get(f"/api/analyses/{started.json()['id']}/result",
+                                headers=coach["headers"]).json()["recommendations"][0]
+    explanation = recommendation["explanation"]
+    assert explanation["meaning"].startswith("Quedó un hueco")
+    assert explanation["example"]["overlay"]["gap"] == [0.2, 0.45]
+    assert "unexpected" not in explanation
+
+
+def test_issue_without_explanation_and_oversized_example():
+    """Old AI Service: no explanation. A huge example frame is dropped but the texts are kept."""
+    from services.ai_result_adapter import MAX_EXPLANATION_CHARS, explanation_json
+
+    assert explanation_json(None) is None
+    assert explanation_json({"meaning": "no seen text"}) is None
+    huge = {"seen": "Vio algo.", "example": {"players": [{"x": 0.5, "y": 0.5}] * MAX_EXPLANATION_CHARS}}
+    assert explanation_json(huge) == '{"seen":"Vio algo.","example":null}'
