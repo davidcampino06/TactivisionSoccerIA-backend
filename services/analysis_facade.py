@@ -144,6 +144,7 @@ class VideoAnalysisFacade:
         db.add_all(links)
 
         analysis.proximity_network = adapter.proximity_network_json()
+        analysis.team_a_color, analysis.team_b_color = adapter.team_colors()
         analysis.model_name = payload.model[:100]
         analysis.model_version = payload.model_version[:50]
         video.duration_seconds = adapter.video_duration_seconds() or video.duration_seconds
