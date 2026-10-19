@@ -76,6 +76,9 @@ class _RecommendationPayload(BaseModel):
     confidence: float = Field(ge=0, le=1)
     severity: Literal["LOW", "MEDIUM", "HIGH"]
     related_indicators: list[str]
+    # seen / meaning / coach texts and an example frame (AI Service issue_examples.py); optional so
+    # an older AI Service still works.
+    explanation: dict[str, Any] | None = None
 
 
 class _DetectionPayload(BaseModel):
