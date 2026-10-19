@@ -199,9 +199,13 @@ class VideoAnalysis(Base):
     model_version: Mapped[str | None] = mapped_column(String(50))
     started_at: Mapped[datetime | None] = mapped_column(DateTime)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
-    warning_message: Mapped[str | None] = mapped_column(String(255))
+    # Every warning of the analysis, not cut (TEXT since migration 0012).
+    warning_message: Mapped[str | None] = mapped_column(Text)
     # JSON: graph of supports between team-mates with BFS hops (AI Service, migration 0005).
     proximity_network: Mapped[str | None] = mapped_column(Text)
+    # Shirt colour of each team as the AI saw it (#rrggbb, migration 0012), so "Equipo A" has a face.
+    team_a_color: Mapped[str | None] = mapped_column(String(7))
+    team_b_color: Mapped[str | None] = mapped_column(String(7))
 
     video: Mapped[Video] = relationship(lazy="joined")
 
