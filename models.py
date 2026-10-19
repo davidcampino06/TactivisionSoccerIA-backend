@@ -261,6 +261,8 @@ class AIRecommendation(Base):
     status: Mapped[str] = mapped_column(String(50), default=RecommendationStatus.GENERATED)
     # TEAM_A, TEAM_B or MATCH (match-level metric); None for analyses stored before migration 0011.
     team: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # JSON (migration 0013): the issue in football words and one real frame that shows it.
+    explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class RecommendationIndicator(Base):
