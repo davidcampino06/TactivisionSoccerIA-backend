@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime
 from typing import Annotated, Any, Literal
@@ -474,6 +475,18 @@ class RecommendationOut(ORMModel):
     status: str
     team: str | None = None
     indicator_names: list[str] = []
+    # The issue in football words and a real frame that shows it (stored as JSON, migration 0013).
+    explanation: dict[str, Any] | None = None
+
+    @field_validator("explanation", mode="before")
+    @classmethod
+    def _parse_explanation(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except ValueError:
+                return None
+        return value
 
 
 class RecommendationStatusUpdate(BaseModel):
