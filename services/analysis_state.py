@@ -16,6 +16,9 @@ from abc import ABC
 from models import VideoAnalysis, utc_now
 from errors import DomainError
 
+# Warnings are TEXT (migration 0012): every warning is kept, with a generous upper bound.
+MAX_WARNING_LENGTH = 4000
+
 
 class InvalidStateTransition(DomainError):
     def __init__(self, message: str) -> None:
@@ -108,7 +111,7 @@ class AnalysisStateMachine:
     def finish(self, state: AnalysisState, message: str | None) -> None:
         self.analysis.completed_at = utc_now()
         if message:
-            self.analysis.warning_message = message[:255]
+            self.analysis.warning_message = message[:MAX_WARNING_LENGTH]
         self.transition_to(state)
 
     def start(self) -> None:

@@ -273,3 +273,26 @@ def test_recommendation_without_team_is_still_accepted(client, coach, video):
     result = client.get(f"/api/analyses/{started.json()['id']}/result", headers=coach["headers"]).json()
     assert result["analysis"]["status"] == "COMPLETED"
     assert result["recommendations"][0]["team"] is None
+
+
+def test_team_colours_and_every_warning_are_stored(client, coach, video):
+    """The app can say which team is "Equipo A", and no warning is cut at 255 characters (migration 0012)."""
+    payload = fake_payload()
+    payload["teams"] = {"colors": {"TEAM_A": "#515350", "TEAM_B": "#A05845"}, "separation_score": 0.85}
+    last = "El Equipo B defendió solo 3 de 118 cuadros analizados: su forma defensiva no se evaluó."
+    payload["warnings"] = ["Se ignoraron 25 detecciones de personas fuera de la cancha." * 4, last]
+    FakeClient.response = payload
+    started = client.post(f"/api/videos/{video['id']}/analysis", headers=coach["headers"], json={})
+    analysis = client.get(f"/api/analyses/{started.json()['id']}/result", headers=coach["headers"]).json()["analysis"]
+    assert (analysis["team_a_color"], analysis["team_b_color"]) == ("#515350", "#a05845")
+    assert analysis["warning_message"].endswith(last)
+
+
+def test_invalid_or_missing_team_colours_are_left_empty(client, coach, video):
+    payload = fake_payload()
+    payload["teams"] = {"colors": {"TEAM_A": "red; drop table", "TEAM_B": 42}}
+    FakeClient.response = payload
+    started = client.post(f"/api/videos/{video['id']}/analysis", headers=coach["headers"], json={})
+    analysis = client.get(f"/api/analyses/{started.json()['id']}/result", headers=coach["headers"]).json()["analysis"]
+    assert analysis["status"] == "COMPLETED"
+    assert (analysis["team_a_color"], analysis["team_b_color"]) == (None, None)
