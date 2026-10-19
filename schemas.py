@@ -428,6 +428,8 @@ class VideoAnalysisOut(ORMModel):
     started_at: datetime | None
     completed_at: datetime | None
     warning_message: str | None
+    team_a_color: str | None = None
+    team_b_color: str | None = None
     queue_position: int | None = None
 
 
