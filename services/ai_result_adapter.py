@@ -25,11 +25,30 @@ from services.ai_client import AIAnalysisPayload
 from services.analysis_state import MAX_WARNING_LENGTH
 
 MAX_TEXT = 255
+# Explanation JSON: three short texts plus one frame (about 2 KB); anything far bigger is not kept.
+MAX_EXPLANATION_CHARS = 20_000
+EXPLANATION_TEXTS = ("seen", "meaning", "coach")
 HEX_COLOR = re.compile(r"^#[0-9a-f]{6}$")
 
 
 def _fit(text: str) -> str:
     return text if len(text) <= MAX_TEXT else text[: MAX_TEXT - 1] + "…"
+
+
+def explanation_json(explanation: dict | None) -> str | None:
+    """The explanation as JSON, with only the known fields; None if it is missing or malformed.
+
+    If the example frame makes it too big, the texts are kept without the frame."""
+    if not isinstance(explanation, dict) or not isinstance(explanation.get("seen"), str):
+        return None
+    kept = {key: explanation[key][:MAX_TEXT * 4] for key in EXPLANATION_TEXTS if isinstance(explanation.get(key), str)}
+    example = explanation.get("example")
+    kept["example"] = example if isinstance(example, dict) else None
+    text = json.dumps(kept, ensure_ascii=False, separators=(",", ":"))
+    if len(text) > MAX_EXPLANATION_CHARS:
+        kept["example"] = None
+        text = json.dumps(kept, ensure_ascii=False, separators=(",", ":"))
+    return text
 
 
 class AIResultAdapter:
@@ -90,6 +109,7 @@ class AIResultAdapter:
                 confidence=round(item.confidence, 4),
                 evidence=_fit(item.evidence),
                 team=item.team,
+                explanation=explanation_json(item.explanation),
             )
             recommendations.append(entity)
             for indicator_name in item.related_indicators:
