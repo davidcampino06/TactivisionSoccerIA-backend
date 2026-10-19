@@ -18,11 +18,14 @@ The proximity network (graph + BFS of the AI) is kept whole as JSON in
 from __future__ import annotations
 
 import json
+import re
 
 from models import AIRecommendation, RecommendationIndicator, TacticalIndicator, new_id, utc_now
 from services.ai_client import AIAnalysisPayload
+from services.analysis_state import MAX_WARNING_LENGTH
 
 MAX_TEXT = 255
+HEX_COLOR = re.compile(r"^#[0-9a-f]{6}$")
 
 
 def _fit(text: str) -> str:
@@ -102,7 +105,17 @@ class AIResultAdapter:
         if self._payload.mode == "SIMULATION_MODE" and not any("SIMULACIÓN" in w.upper() for w in warnings):
             warnings.insert(0, "MODO SIMULACIÓN: datos sintéticos, no es un análisis de video real.")
         text = " | ".join(warnings)
-        return _fit(text) if text.strip() else None
+        return text[:MAX_WARNING_LENGTH] if text.strip() else None
+
+    def team_colors(self) -> tuple[str | None, str | None]:
+        """Shirt colour of TEAM_A and TEAM_B (#rrggbb), or None when the AI did not give a valid one."""
+        colors = self._payload.teams.get("colors") or {}
+        found = []
+        for team in ("TEAM_A", "TEAM_B"):
+            value = colors.get(team) if isinstance(colors, dict) else None
+            value = value.lower() if isinstance(value, str) else None
+            found.append(value if value and HEX_COLOR.match(value) else None)
+        return found[0], found[1]
 
     def video_duration_seconds(self) -> int | None:
         duration = self._payload.video.get("duration_seconds")
