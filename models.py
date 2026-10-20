@@ -301,10 +301,14 @@ class Notification(Base):
 
 
 class NotificationRead(Base):
-    """Read mark of one user on one notification. No row means unread."""
+    """Read mark of one user on one notification. No row means unread.
+
+    ``hidden_at`` set means the user deleted it from his bell (migration 0014); the rest of the
+    team still sees it."""
 
     __tablename__ = "notification_reads"
 
     notification_id: Mapped[str] = mapped_column(ForeignKey("notifications.id", ondelete="CASCADE"), primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     read_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    hidden_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
