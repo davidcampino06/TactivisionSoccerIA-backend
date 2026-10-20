@@ -90,3 +90,40 @@ def test_only_the_newest_are_kept(client, coach, team):
     assert len(items) == PersistentNotificationObserver.KEEP_PER_TEAM
     assert {item["event"] for item in items} == {TACTICAL_ALERT}
     assert unread(client, coach["headers"]) == PersistentNotificationObserver.KEEP_PER_TEAM
+
+
+def test_deleting_is_personal_and_permanent_for_that_user(client, coach, analyst, analysed):
+    """Deleting removes it from my bell only; my teammates keep it, and it never comes back for me."""
+    coach_h, analyst_h = coach["headers"], analyst["headers"]
+    items = client.get("/api/notifications", headers=coach_h).json()
+    total, before = len(items), unread(client, coach_h)
+    first = items[0]
+    assert first["read"] is False
+
+    assert client.delete(f"/api/notifications/{first['id']}", headers=coach_h).status_code == 204
+    assert client.delete(f"/api/notifications/{first['id']}", headers=coach_h).status_code == 204  # idempotent
+    mine = client.get("/api/notifications", headers=coach_h).json()
+    assert first["id"] not in [item["id"] for item in mine] and len(mine) == total - 1
+    assert unread(client, coach_h) == before - 1          # a deleted unread one stops counting
+    assert first["id"] in [item["id"] for item in client.get("/api/notifications", headers=analyst_h).json()]
+
+    # Reading it after deleting does not bring it back.
+    assert client.post(f"/api/notifications/{first['id']}/read", headers=coach_h).status_code == 204
+    assert first["id"] not in [item["id"] for item in client.get("/api/notifications", headers=coach_h).json()]
+
+
+def test_delete_all_empties_only_my_bell(client, coach, analyst, analysed):
+    coach_h, analyst_h = coach["headers"], analyst["headers"]
+    total = len(client.get("/api/notifications", headers=coach_h).json())
+    assert client.delete("/api/notifications", headers=coach_h).json() == {"deleted": total}
+    assert client.get("/api/notifications", headers=coach_h).json() == []
+    assert unread(client, coach_h) == 0
+    assert client.delete("/api/notifications", headers=coach_h).json() == {"deleted": 0}
+    assert len(client.get("/api/notifications", headers=analyst_h).json()) == total
+
+
+def test_cannot_delete_another_teams_notification(client, coach, analysed):
+    other = register(client, "otro.entrenador@club.com", role="COACH")
+    item = client.get("/api/notifications", headers=coach["headers"]).json()[0]
+    response = client.delete(f"/api/notifications/{item['id']}", headers=other["headers"])
+    assert response.status_code == 404
