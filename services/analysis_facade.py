@@ -70,6 +70,7 @@ class VideoAnalysisFacade:
         analysis = VideoAnalysis(
             video_id=video.id, status="PENDING", analysis_mode=mode,
             confidence_threshold=options["confidence_threshold"],
+            own_kit_color=options.get("own_kit_color"),
         )
         db.add(analysis)
         db.commit()
@@ -145,6 +146,7 @@ class VideoAnalysisFacade:
 
         analysis.proximity_network = adapter.proximity_network_json()
         analysis.team_a_color, analysis.team_b_color = adapter.team_colors()
+        analysis.own_team = adapter.own_team()
         analysis.model_name = payload.model[:100]
         analysis.model_version = payload.model_version[:50]
         video.duration_seconds = adapter.video_duration_seconds() or video.duration_seconds
