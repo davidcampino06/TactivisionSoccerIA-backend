@@ -2,7 +2,8 @@
 
 The Facade (and the teams router) publish events; they do not know who listens. Observers:
 - LoggingObserver: audit trail in the server log (every event).
-- PersistentNotificationObserver: stores the events people must see in the bell
+- PersistentNotificationObserver: stores the events people must see in the bell (also the
+  reminder that an unavailable player should be back, services/player_returns.py)
   (table ``notifications``, TactiSoccerIA-db migration 0004), so they survive a restart.
 New observers (e-mail, websockets...) can be added without touching the publishers.
 """
@@ -28,6 +29,7 @@ ANALYSIS_FAILED = "ANALYSIS_FAILED"
 ANALYSIS_CANCELLED = "ANALYSIS_CANCELLED"
 TACTICAL_ALERT = "TACTICAL_ALERT"
 ANALYST_JOINED = "ANALYST_JOINED"
+PLAYER_RETURN_DUE = "PLAYER_RETURN_DUE"  # an unavailable player should be back today
 
 
 @dataclass(frozen=True)
@@ -56,7 +58,8 @@ class PersistentNotificationObserver(AnalysisObserver):
     """Saves the events worth a notification. "Queued" and "started" are only logged: the analysis
     screen already shows them live, and in the bell they would bury the important ones."""
 
-    STORED_EVENTS = frozenset({ANALYSIS_COMPLETED, ANALYSIS_FAILED, ANALYSIS_CANCELLED, TACTICAL_ALERT, ANALYST_JOINED})
+    STORED_EVENTS = frozenset({ANALYSIS_COMPLETED, ANALYSIS_FAILED, ANALYSIS_CANCELLED, TACTICAL_ALERT, ANALYST_JOINED,
+                               PLAYER_RETURN_DUE})
     KEEP_PER_TEAM = 100  # older ones are deleted so the table does not grow forever
 
     def update(self, event: AnalysisEvent) -> None:
