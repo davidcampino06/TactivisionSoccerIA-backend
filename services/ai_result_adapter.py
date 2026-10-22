@@ -127,6 +127,11 @@ class AIResultAdapter:
         text = " | ".join(warnings)
         return text[:MAX_WARNING_LENGTH] if text.strip() else None
 
+    def own_team(self) -> str | None:
+        """Which detected team wears the kit colour given for this analysis (None if unknown)."""
+        value = self._payload.teams.get("own_team")
+        return value if value in ("TEAM_A", "TEAM_B") else None
+
     def team_colors(self) -> tuple[str | None, str | None]:
         """Shirt colour of TEAM_A and TEAM_B (#rrggbb), or None when the AI did not give a valid one."""
         colors = self._payload.teams.get("colors") or {}
