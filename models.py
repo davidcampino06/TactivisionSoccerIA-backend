@@ -7,9 +7,9 @@ create tables automatically in production.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, LargeBinary, Numeric, String, Text
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, LargeBinary, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -91,6 +91,10 @@ class Player(Base):
     preferred_foot: Mapped[str | None] = mapped_column(String(10))
     status: Mapped[str] = mapped_column(String(255), default="ACTIVE")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    # Why he is out (injury, cards, personal reasons) and when he should be back (migration 0016).
+    availability_note: Mapped[str | None] = mapped_column(String(255))
+    expected_return: Mapped[date | None] = mapped_column(Date)
+    return_notified_on: Mapped[date | None] = mapped_column(Date)  # that return was already reminded
 
     @property
     def full_name(self) -> str:
