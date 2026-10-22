@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, LargeBinary, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -63,6 +63,20 @@ class Team(Base):
     invitation_code: Mapped[str] = mapped_column(String(20), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Usual shirt colour (#rrggbb, migration 0015): proposed when a video is analysed.
+    kit_color: Mapped[str | None] = mapped_column(String(7), nullable=True)
+
+
+class TeamCrest(Base):
+    """The team's crest (migration 0015): a 256 px PNG re-encoded by the backend, one per team.
+
+    Its own table so the image bytes are never loaded with the team."""
+    __tablename__ = "team_crests"
+
+    team_id: Mapped[str] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), primary_key=True)
+    content_type: Mapped[str] = mapped_column(String(20), default="image/png")
+    image: Mapped[bytes] = mapped_column(LargeBinary)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
 class Player(Base):
@@ -206,6 +220,9 @@ class VideoAnalysis(Base):
     # Shirt colour of each team as the AI saw it (#rrggbb, migration 0012), so "Equipo A" has a face.
     team_a_color: Mapped[str | None] = mapped_column(String(7))
     team_b_color: Mapped[str | None] = mapped_column(String(7))
+    # Kit colour given for this analysis and which detected team wears it (migration 0015).
+    own_kit_color: Mapped[str | None] = mapped_column(String(7))
+    own_team: Mapped[str | None] = mapped_column(String(10))
 
     video: Mapped[Video] = relationship(lazy="joined")
 
