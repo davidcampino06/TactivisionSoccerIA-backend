@@ -327,3 +327,25 @@ def test_issue_without_explanation_and_oversized_example():
     assert explanation_json({"meaning": "no seen text"}) is None
     huge = {"seen": "Vio algo.", "example": {"players": [{"x": 0.5, "y": 0.5}] * MAX_EXPLANATION_CHARS}}
     assert explanation_json(huge) == '{"seen":"Vio algo.","example":null}'
+
+
+def test_the_kit_colour_tells_the_ai_which_team_is_ours(client, coach, video):
+    """Optional: given, it reaches the AI and the analysis keeps which detected team is ours (0015)."""
+    payload = fake_payload()
+    payload["teams"] = {"colors": {"TEAM_A": "#515350", "TEAM_B": "#a05845"}, "own_team": "TEAM_B"}
+    FakeClient.response = payload
+    started = client.post(f"/api/videos/{video['id']}/analysis", headers=coach["headers"], json={"own_kit_color": "#C1272D"})
+    assert FakeClient.received_options["own_kit_color"] == "#c1272d"
+    analysis = client.get(f"/api/analyses/{started.json()['id']}/result", headers=coach["headers"]).json()["analysis"]
+    assert (analysis["own_kit_color"], analysis["own_team"]) == ("#c1272d", "TEAM_B")
+
+
+def test_without_kit_colour_the_ai_is_not_told_and_nothing_is_marked(client, coach, video):
+    from services.ai_client import HttpVideoAnalysisClient
+
+    started = client.post(f"/api/videos/{video['id']}/analysis", headers=coach["headers"], json={})
+    analysis = client.get(f"/api/analyses/{started.json()['id']}/result", headers=coach["headers"]).json()["analysis"]
+    assert analysis["own_kit_color"] is None and analysis["own_team"] is None
+    form = {key: str(value) for key, value in {"own_kit_color": None, "max_frames": 120}.items()
+            if key in HttpVideoAnalysisClient.FORM_FIELDS and value is not None}
+    assert form == {"max_frames": "120"}   # an empty colour is never sent as the text "None"
