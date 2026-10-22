@@ -117,11 +117,22 @@ class AdminUserUpdate(BaseModel):
 
 
 # ------------------------------------------------------------------------ teams
+# "#rrggbb" in any case; stored lowercase (the database checks ^#[0-9a-f]{6}$).
+HexColor = Annotated[str, Field(pattern=r"^#[0-9a-fA-F]{6}$")]
+
+
+def _lower_color(value: str | None) -> str | None:
+    return value.lower() if isinstance(value, str) else value
+
+
 class TeamCreate(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     category: str | None = Field(default=None, max_length=255)
     city: str | None = Field(default=None, max_length=255)
     description: str | None = Field(default=None, max_length=255)
+    kit_color: HexColor | None = None
+
+    _kit = field_validator("kit_color")(classmethod(lambda cls, value: _lower_color(value)))
 
 
 class TeamUpdate(BaseModel):
@@ -130,6 +141,9 @@ class TeamUpdate(BaseModel):
     city: str | None = Field(default=None, max_length=255)
     description: str | None = Field(default=None, max_length=255)
     is_active: bool | None = None
+    kit_color: HexColor | None = None    # null removes it
+
+    _kit = field_validator("kit_color")(classmethod(lambda cls, value: _lower_color(value)))
 
 
 class TeamSummaryOut(ORMModel):
@@ -157,6 +171,9 @@ class TeamOut(TeamSummaryOut):
     coach_id: str
     description: str | None
     invitation_code: str | None = None  # only filled for the coach
+    kit_color: str | None = None
+    # The crest is served by GET /api/teams/{id}/crest; this date changes when it is replaced.
+    crest_updated_at: datetime | None = None
 
 
 class JoinTeamRequest(BaseModel):
@@ -416,6 +433,11 @@ class AnalysisRequest(BaseModel):
     frame_stride: int = Field(default=3, ge=1, le=60)
     max_frames: int = Field(default=300, ge=1, le=5000)
     team_a_attack_direction: Literal["unknown", "left_to_right", "right_to_left"] = "unknown"
+    # Kit colour of the user's team in this video (optional): the AI still finds both teams alone,
+    # this only tells it which one is ours.
+    own_kit_color: HexColor | None = None
+
+    _kit = field_validator("own_kit_color")(classmethod(lambda cls, value: _lower_color(value)))
 
 
 class VideoAnalysisOut(ORMModel):
@@ -431,6 +453,8 @@ class VideoAnalysisOut(ORMModel):
     warning_message: str | None
     team_a_color: str | None = None
     team_b_color: str | None = None
+    own_kit_color: str | None = None
+    own_team: str | None = None
     queue_position: int | None = None
 
 
