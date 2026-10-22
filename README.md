@@ -85,7 +85,8 @@ de abstracciones).
 | Sistema | `GET /api/hello`, `GET /api/status` (backend, database, ai_service) |
 | Auth | `POST /api/auth/register · login · logout · password-recovery · password-reset · change-password`, `GET/PUT /api/auth/me` |
 | Admin | `GET /api/admin/users`, `PATCH /api/admin/users/{id}`, `GET /api/admin/teams` |
-| Equipos | `POST /api/teams`, `GET /api/teams/mine`, `POST /api/teams/join`, `GET/PUT /api/teams/{id}`, `POST /api/teams/{id}/invitation-code`, `GET/DELETE /api/teams/{id}/analysts[/{userId}]` |
+| Equipos | `POST /api/teams`, `GET /api/teams/mine`, `POST /api/teams/join`, `GET/PUT /api/teams/{id}` (incluye `kit_color`), `POST /api/teams/{id}/invitation-code`, `GET/DELETE /api/teams/{id}/analysts[/{userId}]` |
+| Escudo | `GET/PUT/DELETE /api/teams/{id}/crest`: solo personas del equipo lo ven y solo el entrenador lo cambia; toda imagen (PNG, JPG o WebP, máx. 2 MB) se vuelve a dibujar como PNG de 256 px con Pillow (`services/team_crest.py`), así se descartan metadatos, SVG con código y archivos disfrazados |
 | Jugadores | `GET/POST /api/teams/{id}/players`, `GET/PUT/DELETE /api/players/{id}`, `GET /api/players/{id}/history`, `GET /api/players/{id}/appearances`, `GET /api/teams/{id}/player-stats` (datos del ranking) |
 | Partidos | `GET/POST /api/teams/{id}/matches`, `GET/PUT/DELETE /api/matches/{id}`, `PUT .../result`, `GET .../neighbors`, eventos, formaciones, jugadas |
 | Diseño táctico | `GET/POST /api/formations`, `GET/POST /api/teams/{id}/tactical-plays`, versiones: crear (clon), activar, `undo` |
@@ -94,7 +95,7 @@ de abstracciones).
 | Recomendaciones | `GET /api/matches/{id}/recommendations`, `PATCH /api/recommendations/{id}` (review/confirm/dismiss), `GET /api/teams/{id}/review-queue` (heap) |
 | Comparación | `GET /api/teams/{id}/comparisons?match_ids=a&match_ids=b` (≥2), `GET /api/teams/{id}/evolution` (≥3) |
 | Reportes | `POST/GET /api/teams/{id}/reports`, `GET /api/reports/{id}`, `GET /api/reports/{id}/export?format=json|csv|pdf` |
-| Notificaciones | `GET /api/notifications` (`?unread_only=true`), `GET /api/notifications/unread-count`, `POST /api/notifications/{id}/read`, `POST /api/notifications/read-all` |
+| Notificaciones | `GET /api/notifications` (`?unread_only=true`), `GET /api/notifications/unread-count`, `POST /api/notifications/{id}/read`, `POST /api/notifications/read-all`, `DELETE /api/notifications/{id}` y `DELETE /api/notifications` (solo de la campana de quien borra) |
 
 Documentación interactiva: http://localhost:8000/docs
 
