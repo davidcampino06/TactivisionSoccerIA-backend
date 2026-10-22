@@ -87,7 +87,7 @@ de abstracciones).
 | Admin | `GET /api/admin/users`, `PATCH /api/admin/users/{id}`, `GET /api/admin/teams` |
 | Equipos | `POST /api/teams`, `GET /api/teams/mine`, `POST /api/teams/join`, `GET/PUT /api/teams/{id}` (incluye `kit_color`), `POST /api/teams/{id}/invitation-code`, `GET/DELETE /api/teams/{id}/analysts[/{userId}]` |
 | Escudo | `GET/PUT/DELETE /api/teams/{id}/crest`: solo personas del equipo lo ven y solo el entrenador lo cambia; toda imagen (PNG, JPG o WebP, máx. 2 MB) se vuelve a dibujar como PNG de 256 px con Pillow (`services/team_crest.py`), así se descartan metadatos, SVG con código y archivos disfrazados |
-| Jugadores | `GET/POST /api/teams/{id}/players`, `GET/PUT/DELETE /api/players/{id}`, `GET /api/players/{id}/history`, `GET /api/players/{id}/appearances`, `GET /api/teams/{id}/player-stats` (datos del ranking) |
+| Jugadores | `GET/POST /api/teams/{id}/players`, `GET/PUT/DELETE /api/players/{id}`, `GET /api/players/{id}/history`, `GET /api/players/{id}/appearances`, `GET /api/teams/{id}/player-stats` (datos del ranking). Estado `ACTIVE`, `INJURED`, `SUSPENDED` o `UNAVAILABLE` (motivo personal u otro), con `availability_note` (motivo) y `expected_return` (regreso estimado) |
 | Partidos | `GET/POST /api/teams/{id}/matches`, `GET/PUT/DELETE /api/matches/{id}`, `PUT .../result`, `GET .../neighbors`, eventos, formaciones, jugadas |
 | Diseño táctico | `GET/POST /api/formations`, `GET/POST /api/teams/{id}/tactical-plays`, versiones: crear (clon), activar, `undo` |
 | Videos | `POST/GET /api/matches/{id}/videos`, `GET/DELETE /api/videos/{id}`, `PUT /api/videos/{id}/file` (volver a subir el archivo), **`POST /api/videos/{id}/analysis`** (202) |
@@ -150,5 +150,8 @@ python tests/e2e_check.py ruta/a/video.mp4
   almacenamiento de objetos.
 - La cola de análisis vive en memoria; al arrancar, los análisis PROCESSING se marcan FAILED y los
   PENDING se re-encolan. Las notificaciones sí se guardan en la base (migración 0004 del repo de BD).
+- El aviso de "regreso de un jugador" no necesita un programador de tareas: se crea al consultar la
+  campana el día de su `expected_return` (hora de Colombia), una sola vez por fecha, y nunca cambia el
+  estado del jugador por sí solo (`services/player_returns.py`, migración 0016 del repo de BD).
 - La recuperación de contraseña necesita un proveedor de correo (`MAIL_PROVIDER=smtp` o `brevo`,
   ver `.env.example`). Sin él, solo funciona en desarrollo con `PASSWORD_RESET_EXPOSE_TOKEN=true`.
