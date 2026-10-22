@@ -11,6 +11,7 @@ from models import Detection, Match, Player, PlayerTeamHistory, User, Video, Vid
 from schemas import (
     PlayerAppearanceOut, PlayerCreate, PlayerHistoryOut, PlayerOut, PlayerRemoveRequest, PlayerStatsOut, PlayerUpdate,
 )
+from services.player_returns import UNAVAILABLE_STATUSES, clear_availability
 
 router = APIRouter(prefix="/api", tags=["Players"])
 
@@ -81,6 +82,10 @@ def update_player(player_id: str, body: PlayerUpdate, user: User = Depends(get_c
                                 exclude_id=player.id)
     for field, value in changes.items():
         setattr(player, field, value)
+    if player.status not in UNAVAILABLE_STATUSES:
+        clear_availability(player)          # available again: the reason and the return date go away
+    elif "expected_return" in changes:
+        player.return_notified_on = None    # a new return date is reminded again on its day
     if reactivating:
         _open_history(db, player)
     db.commit()
@@ -93,6 +98,7 @@ def remove_player(player_id: str, body: PlayerRemoveRequest, user: User = Depend
     """Removes the player from the active squad; history and past detections are preserved."""
     player = load_player(db, player_id, user, AccessLevel.MANAGE)
     player.status = "INACTIVE"
+    clear_availability(player)
     _close_history(db, player, body.withdrawal_reason)
     db.commit()
     return player
