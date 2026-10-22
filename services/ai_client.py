@@ -194,13 +194,13 @@ class _HttpClientBase(AIAnalysisClient):
 class HttpVideoAnalysisClient(_HttpClientBase):
     """Uploads the real video file to POST /api/analyze."""
 
-    FORM_FIELDS = ("confidence_threshold", "frame_stride", "max_frames", "team_a_attack_direction")
+    FORM_FIELDS = ("confidence_threshold", "frame_stride", "max_frames", "team_a_attack_direction", "own_kit_color")
 
     def analyze(self, video_path: Path | None, options: dict) -> dict:
         if video_path is None or not video_path.exists():
             raise AIServiceError("Video file is missing on the backend storage.",
                                  "El archivo de video ya no está en el servidor; súbelo de nuevo.")
-        form = {key: str(options[key]) for key in self.FORM_FIELDS if key in options}
+        form = {key: str(options[key]) for key in self.FORM_FIELDS if options.get(key) is not None}
         with video_path.open("rb") as video_file:
             return self._post("/api/analyze", data=form, files={"video": (video_path.name, video_file)})
 
