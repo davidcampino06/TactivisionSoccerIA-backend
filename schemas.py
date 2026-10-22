@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -198,7 +198,16 @@ class PlayerUpdate(BaseModel):
     shirt_number: int | None = Field(default=None, ge=0, le=99)
     position: str | None = Field(default=None, max_length=255)
     preferred_foot: PreferredFoot | None = None
-    status: Literal["ACTIVE", "INJURED", "SUSPENDED", "INACTIVE"] | None = None
+    status: Literal["ACTIVE", "INJURED", "SUSPENDED", "UNAVAILABLE", "INACTIVE"] | None = None
+    # Only while INJURED, SUSPENDED or UNAVAILABLE; cleared when the player is available again.
+    availability_note: str | None = Field(default=None, max_length=255)
+    expected_return: date | None = None
+
+    @field_validator("availability_note")
+    @classmethod
+    def _blank_note_is_none(cls, value: str | None) -> str | None:
+        value = value.strip() if value else None
+        return value or None
 
 
 class PlayerRemoveRequest(BaseModel):
@@ -214,6 +223,8 @@ class PlayerOut(ORMModel):
     position: str | None
     preferred_foot: str | None
     status: str
+    availability_note: str | None = None
+    expected_return: date | None = None
     created_at: datetime
 
 
