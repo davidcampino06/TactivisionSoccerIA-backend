@@ -2,7 +2,8 @@
 
 Notifications are shared by the team; whether each one was read is personal (notification_reads),
 and so is deleting one: it disappears from that user's bell only (hidden_at, migration 0014).
-The administrator has no team, so his list is always empty. Row-Level Security filters the
+The administrator has no team, so his list is always empty. Reading the bell also creates the
+reminder of players expected back today (services/player_returns.py). Row-Level Security filters the
 tables again in PostgreSQL (TactiSoccerIA-db migration 0004).
 """
 
@@ -15,6 +16,7 @@ from dependencies import get_current_user
 from errors import AppError
 from models import Notification, NotificationRead, Team, User, UserRole, utc_now
 from schemas import NotificationOut
+from services.player_returns import notify_due_returns
 
 router = APIRouter(prefix="/api/notifications", tags=["Notifications"])
 
@@ -56,6 +58,7 @@ def list_notifications(limit: int = Query(default=30, ge=1, le=100), unread_only
     team_id = _team_id(db, user)
     if not team_id:
         return []
+    notify_due_returns(db, team_id)
     read = _read_by(user)
     query = db.query(Notification, read.label("read")).filter(Notification.team_id == team_id, ~_hidden_by(user))
     if unread_only:
@@ -71,6 +74,7 @@ def unread_count(user: User = Depends(get_current_user), db: Session = Depends(g
     team_id = _team_id(db, user)
     if not team_id:
         return {"unread": 0}
+    notify_due_returns(db, team_id)  # players expected back today (once per return date)
     count = db.query(Notification.id).filter(Notification.team_id == team_id, ~_read_by(user)).count()
     return {"unread": count}
 
