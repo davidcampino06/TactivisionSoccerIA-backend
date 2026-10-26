@@ -286,6 +286,23 @@ class AIRecommendation(Base):
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class AnalysisStrength(Base):
+    """What the team did well in one analysis (migration 0017). Information, not an alert: no review."""
+    __tablename__ = "analysis_strengths"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    analysis_id: Mapped[str] = mapped_column(ForeignKey("video_analyses.id", ondelete="CASCADE"))
+    team: Mapped[str] = mapped_column(String(10))
+    code: Mapped[str] = mapped_column(String(50))
+    title: Mapped[str] = mapped_column(String(255))
+    evidence: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column(Decimal4)
+    indicator: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # JSON: seen / meaning / keep and one real frame that shows it.
+    explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
 class RecommendationIndicator(Base):
     __tablename__ = "recommendation_indicators"
 
