@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from errors import AppError, domain_error
 from dependencies import AccessLevel, get_current_user, load_analysis, load_player
-from models import Detection, Match, TacticalIndicator, User
+from models import AnalysisStrength, Detection, Match, TacticalIndicator, User
 from routers.recommendations import recommendations_for_analysis
 from schemas import AnalysisResultOut, DetectionOut, TacticalIndicatorOut, TrackAssignmentRequest, VideoAnalysisOut
 from services.analysis_facade import get_analysis_facade
@@ -65,6 +65,8 @@ def get_result(analysis_id: str, user: User = Depends(get_current_user), db: Ses
         },
         "indicators": indicators,
         "recommendations": recommendations_for_analysis(db, analysis_id),
+        "strengths": (db.query(AnalysisStrength).filter(AnalysisStrength.analysis_id == analysis_id)
+                        .order_by(AnalysisStrength.confidence.desc(), AnalysisStrength.title).all()),
         "proximity_network": json.loads(analysis.proximity_network) if analysis.proximity_network else None,
     }
 
