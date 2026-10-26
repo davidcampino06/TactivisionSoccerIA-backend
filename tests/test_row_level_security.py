@@ -11,13 +11,14 @@ from test_team_isolation import world  # noqa: F401  (fixture: two fully populat
 
 import database
 import rls
-from models import Detection, Match, Player, Team, TacticalPlay, User, Video
+from models import AnalysisStrength, Detection, Match, Player, Team, TacticalPlay, User, Video
 from rls import RlsContext
 
 RLS_TABLES = {
     "teams", "players", "player_team_history", "matches", "match_events", "match_formations",
     "tactical_plays", "tactical_play_versions", "match_tactical_plays", "videos", "video_analyses",
     "detections", "tactical_indicators", "ai_recommendations", "recommendation_indicators", "reports",
+    "analysis_strengths",
 }
 
 
@@ -113,3 +114,15 @@ def test_system_session_and_bypass(world):
         with rls.bypass(db):
             assert db.query(Team).count() == 2
         assert db.query(Team).count() == 1  # back to normal after the bypass block
+
+
+def test_strengths_of_another_team_are_invisible(world):
+    """What a team did well (migration 0017) is as private as its problems."""
+    with rls.mark_system(database.SessionLocal()) as db:
+        assert db.query(AnalysisStrength).count() >= 1
+    user_id, team_b = team_of("coach.b@club.com")
+    with session_as(RlsContext(user_id=user_id, role="COACH", team_id=team_b)) as db:
+        assert db.query(AnalysisStrength).count() == 0
+    user_id, team_a = team_of("coach.a@club.com")
+    with session_as(RlsContext(user_id=user_id, role="COACH", team_id=team_a)) as db:
+        assert db.query(AnalysisStrength).filter(AnalysisStrength.analysis_id == world["analysis"]).count() == 1
