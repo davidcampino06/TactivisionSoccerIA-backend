@@ -141,6 +141,7 @@ class VideoAnalysisFacade:
         db.add_all(adapter.indicators())
         recommendations, links = adapter.recommendations()
         db.add_all(recommendations)
+        db.add_all(adapter.strengths())
         db.flush()
         db.add_all(links)
 
