@@ -1,16 +1,17 @@
-"""Matches, match events, formations used and tactical plays included."""
+"""Matches, match events, formations used, tactical plays included and the match plan."""
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from database import get_db
 from errors import AppError
 from dependencies import AccessLevel, get_current_user, load_match, load_tactical_play, load_team
-from models import Formation, Match, MatchEvent, MatchFormation, MatchTacticalPlay, TacticalPlay, User
+from models import Formation, Match, MatchEvent, MatchFormation, MatchTacticalPlay, TacticalPlay, Team, User
 from schemas import (
     FormationOut, MatchCreate, MatchEventCreate, MatchEventOut, MatchFormationRequest, MatchNeighborsOut, MatchOut,
     MatchResultUpdate, MatchTacticalPlayRequest, MatchUpdate, TacticalPlayOut,
 )
+from services.match_plan import match_plan, plan_blocks
 from services.match_timeline import MatchTimeline
 
 router = APIRouter(prefix="/api", tags=["Matches"])
@@ -61,6 +62,25 @@ def update_result(match_id: str, body: MatchResultUpdate, user: User = Depends(g
 def delete_match(match_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     db.delete(load_match(db, match_id, user, AccessLevel.MANAGE))
     db.commit()
+
+
+@router.get("/matches/{match_id}/plan")
+def get_match_plan(match_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Match plan: squad availability, linked plays and only what a person confirmed (services/match_plan.py)."""
+    return match_plan(db, load_match(db, match_id, user, AccessLevel.READ))
+
+
+@router.get("/matches/{match_id}/plan.pdf")
+def get_match_plan_pdf(match_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from services.report_pdf import render_pdf  # imported lazily: only PDF exports need fpdf2
+
+    match = load_match(db, match_id, user, AccessLevel.READ)
+    team = db.get(Team, match.team_id)
+    content = render_pdf(f"Plan de partido vs {match.opponent}", f"Plan de partido · {team.name}",
+                         plan_blocks(match_plan(db, match)))
+    safe = "".join(ch if ch.isascii() and ch.isalnum() else "-" for ch in match.opponent.lower()).strip("-") or "partido"
+    return Response(bytes(content), media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="plan-{safe}.pdf"'})
 
 
 @router.get("/matches/{match_id}/neighbors", response_model=MatchNeighborsOut)
