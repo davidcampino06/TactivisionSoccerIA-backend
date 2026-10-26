@@ -81,6 +81,19 @@ class _RecommendationPayload(BaseModel):
     explanation: dict[str, Any] | None = None
 
 
+class _StrengthPayload(BaseModel):
+    """Something the team did well (AI Service tactical_strengths.py)."""
+    id: str
+    code: str = Field(max_length=50)
+    title: str
+    team: Literal["TEAM_A", "TEAM_B", "MATCH"]
+    evidence: str
+    confidence: float = Field(ge=0, le=1)
+    related_indicators: list[str] = []
+    # seen / meaning / keep texts and an example frame.
+    explanation: dict[str, Any] | None = None
+
+
 class _DetectionPayload(BaseModel):
     frame_number: int = Field(ge=0)
     timestamp: float = Field(ge=0)
@@ -133,6 +146,8 @@ class AIAnalysisPayload(BaseModel):
     proximity_network: _ProximityNetworkPayload | None = None
     possible_issues: list[dict[str, Any]]
     recommendations: list[_RecommendationPayload]
+    # Optional so an AI Service from before strengths still works.
+    strengths: list[_StrengthPayload] = []
     warnings: list[str] = []
     performance: dict[str, Any] = {}
     detection_stability: dict[str, Any] = {}
