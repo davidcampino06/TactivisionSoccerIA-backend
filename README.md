@@ -91,7 +91,7 @@ de abstracciones).
 | Partidos | `GET/POST /api/teams/{id}/matches`, `GET/PUT/DELETE /api/matches/{id}`, `PUT .../result`, `GET .../neighbors`, eventos, formaciones, jugadas |
 | Diseño táctico | `GET/POST /api/formations`, `GET/POST /api/teams/{id}/tactical-plays`, versiones: crear (clon), activar, `undo` |
 | Videos | `POST/GET /api/matches/{id}/videos`, `GET/DELETE /api/videos/{id}`, `PUT /api/videos/{id}/file` (volver a subir el archivo), **`POST /api/videos/{id}/analysis`** (202) |
-| Análisis | `GET /api/analyses/{id}`, `/result` (incluye la red de cercanía: grafo + BFS de la IA), `/indicators`, `/detections`, `/tracks`, `PUT /tracks/{trackId}/player`, `POST /cancel` |
+| Análisis | `GET /api/analyses/{id}`, `/result` (incluye la red de cercanía: grafo + BFS de la IA, y `strengths`: lo que cada equipo hizo bien, con su explicación), `/indicators`, `/detections`, `/tracks`, `PUT /tracks/{trackId}/player`, `POST /cancel` |
 | Recomendaciones | `GET /api/matches/{id}/recommendations`, `PATCH /api/recommendations/{id}` (review/confirm/dismiss), `GET /api/teams/{id}/review-queue` (heap) |
 | Comparación | `GET /api/teams/{id}/comparisons?match_ids=a&match_ids=b` (≥2), `GET /api/teams/{id}/evolution` (≥3) |
 | Reportes | `POST/GET /api/teams/{id}/reports`, `GET /api/reports/{id}`, `GET /api/reports/{id}/export?format=json|csv|pdf` |
