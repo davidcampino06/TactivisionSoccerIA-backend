@@ -152,7 +152,7 @@ def _table(pdf: ReportPdf, block: dict) -> None:
     headings = FontFace(emphasis="BOLD", color=(255, 255, 255), fill_color=INK)
     with pdf.table(col_widths=tuple(block["widths"]), headings_style=headings, line_height=5.2,
                    borders_layout="HORIZONTAL_LINES", cell_fill_color=(246, 247, 246), cell_fill_mode="ROWS",
-                   padding=1.4) as table:
+                   padding=1.4, text_align="LEFT") as table:
         header = table.row()
         for column in block["columns"]:
             header.cell(clean(column))
