@@ -59,3 +59,20 @@ def test_report_list_shows_author_and_only_coach_deletes(client, coach, team, ma
     assert denied.status_code == 403 and denied.json()["code"] == "ROLE_NOT_ALLOWED"
     assert client.delete(f"/api/reports/{report_id}", headers=coach["headers"]).status_code == 204
     assert client.get(f"/api/reports/{report_id}", headers=coach["headers"]).status_code == 404
+
+
+def test_reports_say_what_the_team_did_well():
+    snapshot = {**SNAPSHOT, "strengths": [{
+        "title": "Líneas juntas al defender", "team": "TEAM_A", "evidence": "En el 80 % de 20 cuadros…",
+        "confidence": 0.71, "seen": "Mientras el rival tenía el balón, en el Equipo A el espacio entre líneas fue corto.",
+        "meaning": "No quedó un hueco entre líneas.", "keep": "Que defensa y mediocampo suban y bajen juntos."}]}
+    view = MatchReportView(snapshot, PdfExporter())
+    blocks = view.blocks()
+    headings = [block["text"] for block in blocks if block["kind"] == "heading"]
+    assert headings.index("Lo que hizo bien") > headings.index("Posibles problemas tácticos")
+    strength = next(block for block in blocks if block.get("severity") == "STRENGTH")
+    assert strength["title"] == "Líneas juntas al defender · Equipo A"
+    assert dict(strength["details"])["Cómo mantenerlo"] == "Que defensa y mediocampo suban y bajen juntos."
+    assert view.export().startswith(b"%PDF")
+    csv_text = MatchReportView(snapshot, CsvExporter()).export()
+    assert "fortaleza,Líneas juntas al defender" in csv_text and "No quedó un hueco entre líneas." in csv_text
