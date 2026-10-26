@@ -498,6 +498,30 @@ class TacticalIndicatorOut(ORMModel):
     threshold: float | None
 
 
+class NoteCreate(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("text")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("The note cannot be empty.")
+        return value
+
+
+class NoteOut(BaseModel):
+    """A signed note of the staff on a possible problem (migration 0018)."""
+    id: str
+    recommendation_id: str
+    author_id: str | None
+    author_name: str | None
+    author_role: str | None
+    text: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class RecommendationOut(ORMModel):
     id: str
     match_id: str
@@ -510,6 +534,8 @@ class RecommendationOut(ORMModel):
     status: str
     team: str | None = None
     indicator_names: list[str] = []
+    # What the staff wrote about it, oldest first (migration 0018).
+    notes: list[NoteOut] = []
     # The issue in football words and a real frame that shows it (stored as JSON, migration 0013).
     explanation: dict[str, Any] | None = None
 
@@ -534,6 +560,7 @@ class StrengthOut(ORMModel):
     confidence: float
     indicator: str | None = None
     explanation: dict[str, Any] | None = None
+    status: str = "GENERATED"
 
     @field_validator("explanation", mode="before")
     @classmethod
@@ -544,6 +571,10 @@ class StrengthOut(ORMModel):
             except ValueError:
                 return None
         return value
+
+
+class StrengthStatusUpdate(BaseModel):
+    action: Literal["confirm", "dismiss"]
 
 
 class RecommendationStatusUpdate(BaseModel):
