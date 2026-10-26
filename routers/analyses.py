@@ -11,7 +11,10 @@ from errors import AppError, domain_error
 from dependencies import AccessLevel, get_current_user, load_analysis, load_player
 from models import AnalysisStrength, Detection, Match, TacticalIndicator, User
 from routers.recommendations import recommendations_for_analysis
-from schemas import AnalysisResultOut, DetectionOut, TacticalIndicatorOut, TrackAssignmentRequest, VideoAnalysisOut
+from schemas import (
+    AnalysisResultOut, DetectionOut, StrengthOut, StrengthStatusUpdate, TacticalIndicatorOut, TrackAssignmentRequest,
+    VideoAnalysisOut,
+)
 from services.analysis_facade import get_analysis_facade
 from services.analysis_state import InvalidStateTransition
 
@@ -69,6 +72,24 @@ def get_result(analysis_id: str, user: User = Depends(get_current_user), db: Ses
                         .order_by(AnalysisStrength.confidence.desc(), AnalysisStrength.title).all()),
         "proximity_network": json.loads(analysis.proximity_network) if analysis.proximity_network else None,
     }
+
+
+@router.patch("/{analysis_id}/strengths/{strength_id}", response_model=StrengthOut)
+def review_strength(analysis_id: str, strength_id: str, body: StrengthStatusUpdate,
+                    user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """A person confirms or dismisses what the AI says the team did well (migration 0018).
+
+    Only from GENERATED, like the problems: the match plan uses the confirmed ones."""
+    load_analysis(db, analysis_id, user, AccessLevel.CONTRIBUTE)
+    strength = db.get(AnalysisStrength, strength_id)
+    if strength is None or strength.analysis_id != analysis_id:
+        raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "Strength not found.")
+    if strength.status != "GENERATED":
+        raise AppError(status.HTTP_409_CONFLICT, "INVALID_STRENGTH_STATE",
+                       f"Cannot {body.action} a {strength.status} strength.")
+    strength.status = "CONFIRMED" if body.action == "confirm" else "DISMISSED"
+    db.commit()
+    return strength
 
 
 @router.get("/{analysis_id}/indicators", response_model=list[TacticalIndicatorOut])
