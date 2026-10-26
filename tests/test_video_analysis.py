@@ -30,6 +30,15 @@ def fake_payload(mode="REAL_VIDEO_ANALYSIS"):
             "recommendation": "Review the distance between defensive and midfield lines.", "evidence": "0.31 > 0.22",
             "confidence": 0.71, "severity": "HIGH", "related_indicators": ["team_a.defensive_midfield_distance"],
             "team": "TEAM_A"}],
+        "strengths": [{
+            "id": "NOBODY_ISOLATED:TEAM_B:isolated_players", "code": "NOBODY_ISOLATED",
+            "title": "Siempre con un compañero cerca", "team": "TEAM_B",
+            "evidence": "En el 95 % de 20 cuadros el valor quedó del lado bueno de 0 (promedio 0,05).",
+            "confidence": 0.62, "related_indicators": ["team_b.isolated_players"],
+            "explanation": {"seen": "Mientras el rival tenía el balón (unos 4 segundos de juego), en el Equipo B ningún "
+                                    "jugador quedó sin un compañero cerca en el 95 % de esos momentos.",
+                            "meaning": "Al defender nadie quedó solo.", "keep": "Seguir moviéndose como bloque.",
+                            "example": None}}],
         "warnings": ["Attack direction provided."],
     }
 
