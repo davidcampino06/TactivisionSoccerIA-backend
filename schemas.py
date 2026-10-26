@@ -524,6 +524,28 @@ class RecommendationOut(ORMModel):
         return value
 
 
+class StrengthOut(ORMModel):
+    """What the team did well (migration 0017): title, evidence, confidence and explanation."""
+    id: str
+    team: str
+    code: str
+    title: str
+    evidence: str
+    confidence: float
+    indicator: str | None = None
+    explanation: dict[str, Any] | None = None
+
+    @field_validator("explanation", mode="before")
+    @classmethod
+    def _parse_explanation(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except ValueError:
+                return None
+        return value
+
+
 class RecommendationStatusUpdate(BaseModel):
     action: Literal["review", "confirm", "dismiss"]
 
@@ -534,6 +556,8 @@ class AnalysisResultOut(BaseModel):
     summary: dict[str, Any]
     indicators: list[TacticalIndicatorOut]
     recommendations: list[RecommendationOut]
+    # What each team did well, most confident first (empty for analyses made before migration 0017).
+    strengths: list[StrengthOut] = []
     # Graph of supports between team-mates with BFS hops (None for analyses made before it existed).
     proximity_network: dict[str, Any] | None = None
 
