@@ -11,6 +11,9 @@ Mapping of a recommendation to ``ai_recommendations``:
     confidence  <- confidence (0..1)
     severity    <- LOW / MEDIUM / HIGH
 
+What the team did well (``strengths``) goes to ``analysis_strengths``, one row per strength with
+its explanation as JSON, like the recommendations.
+
 The proximity network (graph + BFS of the AI) is kept whole as JSON in
 ``video_analyses.proximity_network``: it is only read to draw it.
 """
@@ -20,14 +23,14 @@ from __future__ import annotations
 import json
 import re
 
-from models import AIRecommendation, RecommendationIndicator, TacticalIndicator, new_id, utc_now
+from models import AIRecommendation, AnalysisStrength, RecommendationIndicator, TacticalIndicator, new_id, utc_now
 from services.ai_client import AIAnalysisPayload
 from services.analysis_state import MAX_WARNING_LENGTH
 
 MAX_TEXT = 255
 # Explanation JSON: three short texts plus one frame (about 2 KB); anything far bigger is not kept.
 MAX_EXPLANATION_CHARS = 20_000
-EXPLANATION_TEXTS = ("seen", "meaning", "coach")
+EXPLANATION_TEXTS = ("seen", "meaning", "coach", "keep")  # "keep": how to keep doing a strength
 HEX_COLOR = re.compile(r"^#[0-9a-f]{6}$")
 
 
@@ -118,6 +121,22 @@ class AIResultAdapter:
                         id=new_id(), recommendation_id=entity.id, indicator_id=self._indicator_ids[indicator_name]
                     ))
         return recommendations, links
+
+    def strengths(self) -> list[AnalysisStrength]:
+        return [
+            AnalysisStrength(
+                id=new_id(),
+                analysis_id=self._analysis_id,
+                team=item.team,
+                code=item.code,
+                title=_fit(item.title),
+                evidence=item.evidence[:MAX_TEXT * 4],
+                confidence=round(item.confidence, 4),
+                indicator=item.related_indicators[0][:100] if item.related_indicators else None,
+                explanation=explanation_json(item.explanation),
+            )
+            for item in self._payload.strengths
+        ]
 
     def warning_message(self) -> str | None:
         warnings = list(self._payload.warnings)
