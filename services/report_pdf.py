@@ -16,7 +16,8 @@ LINE = (214, 219, 216)
 ACCENT = (227, 50, 74)          # brand red
 WARN_BG = (253, 243, 222)
 WARN_TEXT = (122, 77, 0)
-SEVERITY = {"HIGH": (199, 54, 44), "MEDIUM": (186, 120, 0), "LOW": (46, 110, 180)}
+# Left bar and meta colour of each issue block; "STRENGTH" is what the team did well (green).
+SEVERITY = {"HIGH": (199, 54, 44), "MEDIUM": (186, 120, 0), "LOW": (46, 110, 180), "STRENGTH": (27, 135, 80)}
 
 REPLACEMENTS = {"—": "-", "–": "-", "−": "-", "“": '"', "”": '"', "‘": "'", "’": "'", "…": "...",
                 "⚠": "!", "→": "->", "≥": ">=", "≤": "<=", " ": " ", " ": " "}
@@ -127,7 +128,8 @@ def _issue(pdf: ReportPdf, block: dict) -> None:
     pdf.multi_cell(width, 4.6, clean(block["meta"]), new_x="LEFT", new_y="NEXT")
     pdf.set_font("helvetica", size=9)
     pdf.set_text_color(*MUTED)
-    for label, value in (("Evidencia", block.get("evidence")), ("Recomendación", block.get("recommendation"))):
+    details = block.get("details") or (("Evidencia", block.get("evidence")), ("Recomendación", block.get("recommendation")))
+    for label, value in details:
         if value:
             # Markdown bold keeps label and text in one paragraph, so wrapped lines start at the margin.
             pdf.multi_cell(width, 4.8, f"**{clean(label)}:** {clean(value)}", markdown=True, align="L",
