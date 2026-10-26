@@ -301,6 +301,20 @@ class AnalysisStrength(Base):
     # JSON: seen / meaning / keep and one real frame that shows it.
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    # GENERATED / CONFIRMED / DISMISSED (migration 0018): the match plan only uses confirmed ones.
+    status: Mapped[str] = mapped_column(String(20), default="GENERATED")
+
+
+class RecommendationNote(Base):
+    """What a person of the staff reads in a possible problem, signed (migration 0018)."""
+    __tablename__ = "recommendation_notes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    recommendation_id: Mapped[str] = mapped_column(ForeignKey("ai_recommendations.id", ondelete="CASCADE"))
+    author_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    text: Mapped[str] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
 
 class RecommendationIndicator(Base):
