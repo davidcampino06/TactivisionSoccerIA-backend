@@ -30,6 +30,7 @@ ANALYSIS_CANCELLED = "ANALYSIS_CANCELLED"
 TACTICAL_ALERT = "TACTICAL_ALERT"
 ANALYST_JOINED = "ANALYST_JOINED"
 PLAYER_RETURN_DUE = "PLAYER_RETURN_DUE"  # an unavailable player should be back today
+RECOMMENDATION_NOTE = "RECOMMENDATION_NOTE"  # someone of the staff wrote about a possible problem
 
 
 @dataclass(frozen=True)
@@ -59,7 +60,7 @@ class PersistentNotificationObserver(AnalysisObserver):
     screen already shows them live, and in the bell they would bury the important ones."""
 
     STORED_EVENTS = frozenset({ANALYSIS_COMPLETED, ANALYSIS_FAILED, ANALYSIS_CANCELLED, TACTICAL_ALERT, ANALYST_JOINED,
-                               PLAYER_RETURN_DUE})
+                               PLAYER_RETURN_DUE, RECOMMENDATION_NOTE})
     KEEP_PER_TEAM = 100  # older ones are deleted so the table does not grow forever
 
     def update(self, event: AnalysisEvent) -> None:
