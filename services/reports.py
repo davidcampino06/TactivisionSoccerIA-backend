@@ -22,7 +22,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models import (
-    AIRecommendation, Match, MatchEvent, RecommendationIndicator, Report, TacticalIndicator, Team, User,
+    AIRecommendation, AnalysisStrength, Match, MatchEvent, RecommendationIndicator, Report, TacticalIndicator, Team, User,
     VideoAnalysis, utc_now,
 )
 from services import report_labels as labels
@@ -99,6 +99,21 @@ class ReportBuilder:
         self._snapshot["sections"] += ["possible_issues", "ai_recommendations"]
         return self
 
+    def strengths(self, strengths: list[AnalysisStrength]) -> "ReportBuilder":
+        """What each team did well (migration 0017), with its meaning and how to keep it."""
+        def text(strength: AnalysisStrength, key: str) -> str:
+            try:
+                return str((json.loads(strength.explanation or "{}") or {}).get(key) or "")
+            except ValueError:
+                return ""
+        self._snapshot["strengths"] = [
+            {"title": s.title, "team": s.team, "evidence": s.evidence, "confidence": s.confidence,
+             "seen": text(s, "seen"), "meaning": text(s, "meaning"), "keep": text(s, "keep")}
+            for s in strengths
+        ]
+        self._snapshot["sections"].append("strengths")
+        return self
+
     def evolution(self, evolution: dict) -> "ReportBuilder":
         self._snapshot["team_evolution"] = evolution
         self._snapshot["sections"].append("team_evolution")
@@ -131,6 +146,8 @@ class ReportDirector:
             builder.indicators(self._db.query(TacticalIndicator)
                                .filter(TacticalIndicator.video_analysis_id == analysis.id).all())
             builder.recommendations(_recommendations_with_indicators(self._db, analysis.id))
+            builder.strengths(self._db.query(AnalysisStrength).filter(AnalysisStrength.analysis_id == analysis.id)
+                              .order_by(AnalysisStrength.confidence.desc()).all())
 
     def match_report(self, team: Team, author: User, title: str, match: Match) -> dict:
         builder = ReportBuilder().header("MATCH", title, team, author).match(match)
@@ -279,6 +296,10 @@ class MatchReportView(ReportView):
         rows += [{"seccion": "recomendacion", "nombre": r["issue"], "valor": r["confidence"],
                   "valor_legible": f"confianza {labels.percent(r['confidence'])}", "detalle": r["recommendation"]}
                  for r in self.snapshot.get("ai_recommendations", [])]
+        rows += [{"seccion": "fortaleza", "nombre": s["title"], "equipo": labels.TEAM_LABELS.get(s["team"].lower(), s["team"]),
+                  "valor": s["confidence"], "valor_legible": f"confianza {labels.percent(s['confidence'])}",
+                  "detalle": s["meaning"] or s["evidence"]}
+                 for s in self.snapshot.get("strengths", [])]
         return rows
 
     def content_blocks(self) -> list[dict]:
@@ -318,6 +339,18 @@ class MatchReportView(ReportView):
                             f"{labels.STATUS_LABELS.get(issue['status'], issue['status']).lower()}",
                     "severity": issue["severity"], "evidence": issue["evidence"],
                     "recommendation": recommendations.get(issue["issue"], ""),
+                })
+
+        strengths = self.snapshot.get("strengths") or []
+        if strengths:
+            blocks.append({"kind": "heading", "text": "Lo que hizo bien"})
+            for strength in strengths:
+                blocks.append({
+                    "kind": "issue", "severity": "STRENGTH",
+                    "title": f"{strength['title']} · {labels.TEAM_LABELS.get(strength['team'].lower(), strength['team'])}",
+                    "meta": f"Confianza {labels.percent(strength['confidence'])}",
+                    "details": [("Qué se vio", strength["seen"] or strength["evidence"]),
+                                ("Qué significa", strength["meaning"]), ("Cómo mantenerlo", strength["keep"])],
                 })
 
         indicators = self.snapshot.get("tactical_indicators") or []
