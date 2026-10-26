@@ -1,13 +1,23 @@
-"""AI recommendations: list and human review (review / confirm / dismiss)."""
+"""AI recommendations: list, human review (review / confirm / dismiss) and the staff's notes.
 
-from fastapi import APIRouter, Depends, Query, status
+The notes (migration 0018) are what a person reads in a possible problem: signed, oldest first, and
+announced in the team's bell. Anyone of the team who can review can write one; only its author or
+the coach can delete it.
+"""
+
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from database import get_db
 from errors import AppError
 from dependencies import AccessLevel, get_current_user, load_match, load_recommendation, load_team
-from models import AIRecommendation, Match, RecommendationIndicator, RecommendationStatus, TacticalIndicator, User
-from schemas import RecommendationOut, RecommendationStatusUpdate
+from models import (
+    AIRecommendation, Match, RecommendationIndicator, RecommendationNote, RecommendationStatus, TacticalIndicator, User,
+    UserRole,
+)
+from schemas import NoteCreate, NoteOut, RecommendationOut, RecommendationStatusUpdate
+from services.analysis_events import RECOMMENDATION_NOTE, AnalysisEvent, NotificationCenter
+from services.review_notes import notes_of
 from services.review_priority import OPEN_STATES, by_priority, review_queue
 
 router = APIRouter(prefix="/api", tags=["AI Recommendations"])
@@ -19,8 +29,15 @@ TRANSITIONS = {
 }
 
 
+def analysis_of(db: Session, recommendation_id: str) -> str | None:
+    return (db.query(TacticalIndicator.video_analysis_id)
+              .join(RecommendationIndicator, RecommendationIndicator.indicator_id == TacticalIndicator.id)
+              .filter(RecommendationIndicator.recommendation_id == recommendation_id).limit(1).scalar())
+
+
 def _with_indicator_names(db: Session, recommendations: list[AIRecommendation]) -> list[RecommendationOut]:
     ids = [r.id for r in recommendations]
+    notes = notes_of(db, ids)
     names: dict[str, list[str]] = {}
     if ids:
         for recommendation_id, name in (db.query(RecommendationIndicator.recommendation_id, TacticalIndicator.name)
@@ -31,6 +48,7 @@ def _with_indicator_names(db: Session, recommendations: list[AIRecommendation]) 
     for recommendation in recommendations:
         item = RecommendationOut.model_validate(recommendation)
         item.indicator_names = names.get(recommendation.id, [])
+        item.notes = notes.get(recommendation.id, [])
         output.append(item)
     return output
 
@@ -65,6 +83,37 @@ def review_recommendation(recommendation_id: str, body: RecommendationStatusUpda
     recommendation.status = target
     db.commit()
     return _with_indicator_names(db, [recommendation])[0]
+
+
+@router.post("/recommendations/{recommendation_id}/notes", response_model=NoteOut,
+             status_code=status.HTTP_201_CREATED)
+def add_note(recommendation_id: str, body: NoteCreate, user: User = Depends(get_current_user),
+             db: Session = Depends(get_db)):
+    recommendation = load_recommendation(db, recommendation_id, user, AccessLevel.CONTRIBUTE)
+    note = RecommendationNote(recommendation_id=recommendation.id, author_id=user.id, text=body.text)
+    db.add(note)
+    db.commit()
+    match = db.get(Match, recommendation.match_id)
+    title = recommendation.title.removeprefix("Posible problema táctico: ")
+    preview = body.text if len(body.text) <= 120 else body.text[:119] + "…"
+    NotificationCenter().publish(AnalysisEvent(
+        RECOMMENDATION_NOTE, match.team_id, analysis_of(db, recommendation.id),
+        f"{user.first_name} {user.last_name} escribió sobre «{title}» (vs {match.opponent}): {preview}",
+        actor_id=user.id))
+    return notes_of(db, [recommendation.id])[recommendation.id][-1]
+
+
+@router.delete("/recommendation-notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_note(note_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    note = db.get(RecommendationNote, note_id)
+    if note is None:
+        raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "Note not found.")
+    load_recommendation(db, note.recommendation_id, user, AccessLevel.READ, label="Note")
+    if note.author_id != user.id and user.role != UserRole.COACH:
+        raise AppError(status.HTTP_403_FORBIDDEN, "NOTE_NOT_YOURS", "Only its author or the coach can delete a note.")
+    db.delete(note)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/teams/{team_id}/pending-reviews")
