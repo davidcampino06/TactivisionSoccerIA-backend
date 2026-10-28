@@ -65,6 +65,8 @@ class _IndicatorPayload(BaseModel):
     value: float
     unit: str = Field(max_length=50)
     threshold: float | None = None
+    samples: int | None = Field(default=None, ge=0)
+    exceed_ratio: float | None = Field(default=None, ge=0, le=1)
 
 
 class _RecommendationPayload(BaseModel):
