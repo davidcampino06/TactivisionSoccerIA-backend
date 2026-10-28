@@ -577,6 +577,42 @@ class StrengthStatusUpdate(BaseModel):
     action: Literal["confirm", "dismiss"]
 
 
+class InboxContext(BaseModel):
+    """Where an item of the review inbox comes from: its match and its analysis (team colours, ours)."""
+    match_id: str
+    opponent: str
+    match_date: datetime
+    analysis_id: str | None = None
+    team_a_color: str | None = None
+    team_b_color: str | None = None
+    own_team: str | None = None
+
+
+class InboxProblem(RecommendationOut):
+    context: InboxContext
+
+
+class InboxStrength(StrengthOut):
+    context: InboxContext
+
+
+class InboxMatch(BaseModel):
+    match_id: str
+    opponent: str
+    match_date: datetime
+    problems: int
+    strengths: int
+
+
+class ReviewInboxOut(BaseModel):
+    """Everything of our team still waiting for a person, across all matches (GET /teams/{id}/review-inbox)."""
+    problems: list[InboxProblem]
+    strengths: list[InboxStrength]
+    matches: list[InboxMatch]
+    # Open problems of the rival: they never reach the plan and are read in each analysis.
+    rival_problems: int = 0
+
+
 class RecommendationStatusUpdate(BaseModel):
     action: Literal["review", "confirm", "dismiss"]
 
