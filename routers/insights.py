@@ -1,4 +1,4 @@
-"""Tactical analysis across matches (compare, evolution)."""
+"""Tactical analysis across matches (compare, evolution, follow-up of the confirmed problems)."""
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
@@ -8,6 +8,7 @@ from errors import domain_error
 from dependencies import AccessLevel, get_current_user, load_team
 from models import User
 from services.match_timeline import ComparisonError, analysed_matches, compare_matches, team_evolution
+from services.problem_tracking import problem_tracking
 
 router = APIRouter(prefix="/api", tags=["Tactical Analysis"])
 
@@ -37,3 +38,10 @@ def evolution(team_id: str, match_ids: list[str] | None = Query(default=None), l
         return team_evolution(db, team_id, match_ids, last)
     except ComparisonError as error:
         raise domain_error(error, status.HTTP_400_BAD_REQUEST) from error
+
+
+@router.get("/teams/{team_id}/problem-tracking")
+def confirmed_problem_tracking(team_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Each problem of our team confirmed by a person and whether it came back in the matches analysed after."""
+    load_team(db, team_id, user, AccessLevel.READ)
+    return problem_tracking(db, team_id)
