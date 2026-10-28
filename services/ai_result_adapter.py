@@ -93,6 +93,8 @@ class AIResultAdapter:
                 value=round(item.value, 4),
                 unit=item.unit[:50],
                 threshold=round(item.threshold, 4) if item.threshold is not None else None,
+                samples=item.samples,
+                exceed_ratio=round(item.exceed_ratio, 4) if item.exceed_ratio is not None else None,
                 calculated_at=calculated_at,
             )
             self._indicator_ids[item.name] = entity.id
