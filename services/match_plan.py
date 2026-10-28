@@ -91,7 +91,7 @@ def _previous_matches(db: Session, match: Match) -> list[dict]:
     return sorted(before, key=lambda m: m["match_date"], reverse=True)[:LOOKBACK_MATCHES]
 
 
-def _ours(team: str | None, own_team: str | None) -> bool:
+def counts_for_us(team: str | None, own_team: str | None) -> bool:
     """With the user's team known, only its items and match-level ones; unknown: all (labelled)."""
     return own_team is None or team in (own_team, "MATCH")
 
@@ -116,7 +116,7 @@ def _to_correct(db: Session, previous: list[dict]) -> tuple[list[dict], int]:
     confirmed, unreviewed = [], 0
     for recommendation in recommendations:
         analysis = analyses.get(analysis_ids.get(recommendation.id))
-        if not _ours(recommendation.team, analysis.own_team if analysis else None):
+        if not counts_for_us(recommendation.team, analysis.own_team if analysis else None):
             continue
         if recommendation.status == "CONFIRMED":
             confirmed.append((recommendation, analysis))
@@ -155,7 +155,7 @@ def _to_keep(db: Session, previous: list[dict]) -> tuple[list[dict], int]:
     grouped: dict[str, dict] = {}
     unreviewed = 0
     for strength, analysis, match_id in rows:
-        if not _ours(strength.team, analysis.own_team):
+        if not counts_for_us(strength.team, analysis.own_team):
             continue
         if strength.status == "GENERATED":
             unreviewed += 1
