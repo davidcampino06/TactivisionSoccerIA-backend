@@ -1,4 +1,5 @@
-"""AI recommendations: list, human review (review / confirm / dismiss) and the staff's notes.
+"""AI recommendations: list, human review (review / confirm / dismiss), the staff's notes and the
+review inbox (everything of the team still waiting for a person).
 
 The notes (migration 0018) are what a person reads in a possible problem: signed, oldest first, and
 announced in the team's bell. Anyone of the team who can review can write one; only its author or
@@ -15,8 +16,12 @@ from models import (
     AIRecommendation, Match, RecommendationIndicator, RecommendationNote, RecommendationStatus, TacticalIndicator, User,
     UserRole,
 )
-from schemas import NoteCreate, NoteOut, RecommendationOut, RecommendationStatusUpdate
+from schemas import (
+    InboxProblem, InboxStrength, NoteCreate, NoteOut, RecommendationOut, RecommendationStatusUpdate, ReviewInboxOut,
+    StrengthOut,
+)
 from services.analysis_events import RECOMMENDATION_NOTE, AnalysisEvent, NotificationCenter
+from services.review_inbox import inbox_matches, open_problems, unreviewed_strengths
 from services.review_notes import notes_of
 from services.review_priority import OPEN_STATES, by_priority, review_queue
 
@@ -168,3 +173,18 @@ def team_review_queue(team_id: str, limit: int = Query(default=5, ge=1, le=20),
     return {"total": total,
             "items": [view(item, rank) for rank, item in enumerate(top, start=1)],
             "heap": [view(item) for item in heap[:HEAP_PREVIEW]]}
+
+
+@router.get("/teams/{team_id}/review-inbox", response_model=ReviewInboxOut)
+def review_inbox(team_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Open problems (most urgent first, from the heap) and unreviewed strengths of our team, with the
+    match and analysis each one comes from. Reviewing is done with the usual PATCH endpoints."""
+    load_team(db, team_id, user, AccessLevel.READ)
+    problems, rival_problems = open_problems(db, team_id)
+    strengths = unreviewed_strengths(db, team_id)
+    shown = _with_indicator_names(db, [recommendation for recommendation, _ in problems])
+    return ReviewInboxOut(
+        problems=[InboxProblem(**item.model_dump(), context=context) for item, (_, context) in zip(shown, problems)],
+        strengths=[InboxStrength.model_validate({**StrengthOut.model_validate(strength).model_dump(), "context": context})
+                   for strength, context in strengths],
+        matches=inbox_matches(problems, strengths), rival_problems=rival_problems)
