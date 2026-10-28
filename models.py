@@ -259,6 +259,9 @@ class TacticalIndicator(Base):
     unit: Mapped[str] = mapped_column(String(50))
     calculated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     threshold: Mapped[float | None] = mapped_column(Decimal4)
+    # Frames judged and share of them on the wrong side of the threshold (migration 0019; NULL before).
+    samples: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    exceed_ratio: Mapped[float | None] = mapped_column(Numeric(5, 4, asdecimal=False), nullable=True)
 
 
 class RecommendationStatus:
