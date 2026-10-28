@@ -7,6 +7,7 @@
     to_correct  possible problems CONFIRMED by a person in the last analysed matches before this one,
                 of our team (the analysis knows which detected team is ours) or of the whole match,
                 grouped when the same problem appeared in several matches, with the staff's notes
+                and its follow-up (did it come back after it was confirmed? problem_tracking.py)
     to_keep     strengths CONFIRMED by a person in the same analyses, grouped the same way
     left_out    how many problems and strengths of those matches are still unreviewed (not shown)
 
@@ -127,7 +128,7 @@ def _to_correct(db: Session, previous: list[dict]) -> tuple[list[dict], int]:
     for recommendation, analysis in confirmed:
         match = by_match[recommendation.match_id]
         item = grouped.setdefault(recommendation.title, {
-            "title": recommendation.title.removeprefix(ISSUE_PREFIX).capitalize(),
+            "key": recommendation.title, "title": recommendation.title.removeprefix(ISSUE_PREFIX).capitalize(),
             "recommendation": recommendation.description, "severity": recommendation.severity,
             "occurrences": [], "notes": []})
         if SEVERITY_ORDER.get(recommendation.severity, 3) < SEVERITY_ORDER.get(item["severity"], 3):
@@ -176,6 +177,11 @@ def _to_keep(db: Session, previous: list[dict]) -> tuple[list[dict], int]:
 def match_plan(db: Session, match: Match) -> dict:
     previous = _previous_matches(db, match)
     to_correct, open_problems = _to_correct(db, previous)
+    from services.problem_tracking import problem_tracking  # it uses this module's our-team rule
+    tracking = {item["key"]: item for item in problem_tracking(db, match.team_id, before=match.match_date)}
+    for item in to_correct:
+        follow = tracking.get(item.pop("key"))
+        item["tracking"] = follow and {k: follow[k] for k in ("trend", "timeline", "measured_after", "came_back")}
     to_keep, open_strengths = _to_keep(db, previous)
     return {
         "match": {"id": match.id, "opponent": match.opponent, "match_date": match.match_date.isoformat(),
@@ -196,6 +202,21 @@ def _short_date(value: str) -> str:
 
 def _player_line(player: dict) -> str:
     return f"{player['shirt_number']} {player['name']}" if player["shirt_number"] is not None else player["name"]
+
+
+def tracking_text(tracking: dict) -> str:
+    """The follow-up of a confirmed problem in one line, as the PDF shows it."""
+    after, back, later = tracking["measured_after"], tracking["came_back"], len(tracking["timeline"]) - 1
+    played = "partido analizado" if after == 1 else "partidos analizados"
+    if tracking["trend"] == "NO_DATA" and later:
+        return (f"{later} {'partido analizado' if later == 1 else 'partidos analizados'} después de confirmarlo, "
+                "pero no se pudo juzgar en ninguno (pocos cuadros de esa fase o análisis anterior a esta función).")
+    return {
+        "NO_DATA": "todavía no hay partidos analizados después de confirmarlo.",
+        "RECURRING": f"volvió a aparecer en el último partido analizado ({back} de {after} {played} después de confirmarlo).",
+        "IMPROVING": f"no apareció en el último partido analizado (sí en {back} de {after} {played} después de confirmarlo).",
+        "GONE": f"no ha vuelto a aparecer en {after} {played} después de confirmarlo.",
+    }[tracking["trend"]]
 
 
 def plan_blocks(plan: dict) -> list[dict]:
@@ -244,6 +265,8 @@ def plan_blocks(plan: dict) -> list[dict]:
     for item in plan["to_correct"]:
         seen = ", ".join(f"vs {o['opponent']}" for o in item["occurrences"])
         details = [("Recomendación", item["recommendation"])]
+        if item.get("tracking"):
+            details.append(("Seguimiento", tracking_text(item["tracking"])))
         details += [(f"{n['author'] or 'Usuario eliminado'} ({n['role'] or '-'}, vs {n['opponent']})", n["text"])
                     for n in item["notes"]]
         blocks.append({"kind": "issue", "severity": item["severity"], "title": item["title"],
