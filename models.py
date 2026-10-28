@@ -287,7 +287,7 @@ class AIRecommendation(Base):
 
 
 class AnalysisStrength(Base):
-    """What the team did well in one analysis (migration 0017). Information, not an alert: no review."""
+    """What the team did well in one analysis (migration 0017), confirmed or dismissed by a person (0018)."""
     __tablename__ = "analysis_strengths"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
