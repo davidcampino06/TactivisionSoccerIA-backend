@@ -182,7 +182,9 @@ class AIAnalysisClient(ABC):
         ...
 
 
-class _HttpClientBase(AIAnalysisClient):
+class _HttpTransport:
+    """POST to the AI Service with the API key, turning failures into AIServiceError."""
+
     def __init__(self, base_url: str = settings.ai_service_url, api_key: str = settings.ai_service_api_key,
                  timeout_seconds: float = settings.ai_service_timeout_seconds) -> None:
         self._base_url = base_url
@@ -208,6 +210,10 @@ class _HttpClientBase(AIAnalysisClient):
         return response.json()
 
 
+class _HttpClientBase(_HttpTransport, AIAnalysisClient):
+    """An analysis client that talks HTTP to the AI Service."""
+
+
 class HttpVideoAnalysisClient(_HttpClientBase):
     """Uploads the real video file to POST /api/analyze."""
 
@@ -220,6 +226,27 @@ class HttpVideoAnalysisClient(_HttpClientBase):
         form = {key: str(options[key]) for key in self.FORM_FIELDS if options.get(key) is not None}
         with video_path.open("rb") as video_file:
             return self._post("/api/analyze", data=form, files={"video": (video_path.name, video_file)})
+
+
+# Frame cap of each analysis detail (the app offers these two): the clip check says how much of the
+# video each one covers, because the AI takes frames from the start until the cap.
+ANALYSIS_DETAILS = {"fast": {"frame_stride": 5, "max_frames": 120}, "full": {"frame_stride": 3, "max_frames": 300}}
+
+
+class HttpClipCheckClient(_HttpTransport):
+    """POST /api/video-quality: is the clip fit for the analysis, before spending one on it."""
+
+    def check(self, video_path: Path) -> dict:
+        if not video_path.exists():
+            raise AIServiceError("Video file is missing on the backend storage.",
+                                 "El archivo de video ya no está en el servidor; súbelo de nuevo.")
+        form = {"fast_stride": ANALYSIS_DETAILS["fast"]["frame_stride"],
+                "fast_max_frames": ANALYSIS_DETAILS["fast"]["max_frames"],
+                "full_stride": ANALYSIS_DETAILS["full"]["frame_stride"],
+                "full_max_frames": ANALYSIS_DETAILS["full"]["max_frames"]}
+        with video_path.open("rb") as video_file:
+            return self._post("/api/video-quality", data={k: str(v) for k, v in form.items()},
+                              files={"video": (video_path.name, video_file)})
 
 
 class HttpSimulationClient(_HttpClientBase):
