@@ -203,6 +203,9 @@ class Video(Base):
     duration_seconds: Mapped[int | None] = mapped_column(Integer)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     status: Mapped[str] = mapped_column(String(50), default="UPLOADED")
+    # Tactical situation the clip shows, chosen by a person (migration 0020); NULL: not classified.
+    situation: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    situation_note: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
 
 class VideoAnalysis(Base):
