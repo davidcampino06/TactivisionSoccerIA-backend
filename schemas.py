@@ -451,6 +451,23 @@ class AnalysisRequest(BaseModel):
     _kit = field_validator("own_kit_color")(classmethod(lambda cls, value: _lower_color(value)))
 
 
+class ClipCheck(BaseModel):
+    code: str
+    status: Literal["ok", "warn", "bad"]
+    measured: bool
+    title: str
+    detail: str
+    value: Any = None
+
+
+class ClipCheckOut(BaseModel):
+    """Whether a clip is fit for the analysis (POST /videos/{id}/quality). Advice: it never blocks."""
+    verdict: Literal["ok", "warn", "bad"]
+    video: dict[str, Any]
+    sampled_frames: int
+    checks: list[ClipCheck]
+
+
 class VideoAnalysisOut(ORMModel):
     id: str
     video_id: str
