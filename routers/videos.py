@@ -3,16 +3,18 @@
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from config import settings
 from database import get_db
 from errors import AppError
-from dependencies import AccessLevel, get_current_user, load_match, load_video
+from dependencies import AccessLevel, get_current_user, load_match, load_team, load_video
 from models import User, Video, VideoAnalysis
-from schemas import AnalysisRequest, ClipCheckOut, VideoAnalysisOut, VideoOut
+from schemas import AnalysisRequest, ClipCheckOut, VideoAnalysisOut, VideoOut, VideoSituationUpdate
 from services.ai_client import AIServiceError, HttpClipCheckClient
+from services.clip_library import clip_library
 from services.analysis_facade import AnalysisRequestError, get_analysis_facade, video_file_path
 
 router = APIRouter(prefix="/api", tags=["Videos"])
@@ -59,14 +61,42 @@ def video_out(video: Video) -> VideoOut:
 
 
 @router.post("/matches/{match_id}/videos", response_model=VideoOut, status_code=status.HTTP_201_CREATED)
-def upload_video(match_id: str, video: UploadFile = File(...), user: User = Depends(get_current_user),
+def upload_video(match_id: str, video: UploadFile = File(...), situation: str | None = Form(None),
+                 situation_note: str | None = Form(None), user: User = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     load_match(db, match_id, user, AccessLevel.CONTRIBUTE)
+    tag = _situation(situation or None, situation_note)
     original_name, stored_name, video_format, size = _store_upload(video)
-    entity = Video(match_id=match_id, file_name=original_name, file_path=stored_name, format=video_format, file_size=size)
+    entity = Video(match_id=match_id, file_name=original_name, file_path=stored_name, format=video_format, file_size=size,
+                   situation=tag.situation, situation_note=tag.situation_note)
     db.add(entity)
     db.commit()
     return video_out(entity)
+
+
+def _situation(situation: str | None, note: str | None) -> VideoSituationUpdate:
+    try:
+        return VideoSituationUpdate(situation=situation, situation_note=note)
+    except ValidationError as error:
+        raise AppError(status.HTTP_422_UNPROCESSABLE_ENTITY, "INVALID_SITUATION", "Invalid situation or note.") from error
+
+
+@router.patch("/videos/{video_id}", response_model=VideoOut)
+def classify_video(video_id: str, body: VideoSituationUpdate, user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)):
+    """Says which tactical situation the clip shows (a person chooses it; the AI never does)."""
+    entity = load_video(db, video_id, user, AccessLevel.CONTRIBUTE)
+    entity.situation, entity.situation_note = body.situation, body.situation_note
+    db.commit()
+    return video_out(entity)
+
+
+@router.get("/teams/{team_id}/clip-library")
+def team_clip_library(team_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Every analysed clip of the team with its situation, problems and strengths (ours) and the
+    counts per situation, problem and strength, from an inverted index (HashTable)."""
+    load_team(db, team_id, user, AccessLevel.READ)
+    return clip_library(db, team_id)
 
 
 @router.put("/videos/{video_id}/file", response_model=VideoOut)
