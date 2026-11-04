@@ -425,6 +425,23 @@ class MatchTacticalPlayRequest(BaseModel):
 
 
 # ----------------------------------------------------------------- videos / AI
+# Tactical situation of a clip (migration 0020), chosen by a person.
+Situation = Literal["BUILD_UP", "POSITIONAL_ATTACK", "COUNTER_ATTACK", "DEFENSIVE_TRANSITION", "PRESSING",
+                    "DEFENSIVE_BLOCK", "SET_PIECE"]
+
+
+def _clean_note(value: str | None) -> str | None:
+    value = (value or "").strip()
+    return value or None
+
+
+class VideoSituationUpdate(BaseModel):
+    situation: Situation | None = None
+    situation_note: str | None = Field(default=None, max_length=200)
+
+    _note = field_validator("situation_note")(classmethod(lambda cls, value: _clean_note(value)))
+
+
 class VideoOut(ORMModel):
     id: str
     match_id: str
@@ -434,6 +451,8 @@ class VideoOut(ORMModel):
     duration_seconds: int | None
     uploaded_at: datetime
     status: str
+    situation: str | None = None
+    situation_note: str | None = None
     # False when the server no longer has the file (ephemeral disk): a new real analysis needs it again.
     file_available: bool = True
 
