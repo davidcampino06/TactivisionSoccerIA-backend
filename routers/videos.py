@@ -11,7 +11,8 @@ from database import get_db
 from errors import AppError
 from dependencies import AccessLevel, get_current_user, load_match, load_video
 from models import User, Video, VideoAnalysis
-from schemas import AnalysisRequest, VideoAnalysisOut, VideoOut
+from schemas import AnalysisRequest, ClipCheckOut, VideoAnalysisOut, VideoOut
+from services.ai_client import AIServiceError, HttpClipCheckClient
 from services.analysis_facade import AnalysisRequestError, get_analysis_facade, video_file_path
 
 router = APIRouter(prefix="/api", tags=["Videos"])
@@ -116,6 +117,22 @@ def start_analysis(video_id: str, body: AnalysisRequest, user: User = Depends(ge
     result = VideoAnalysisOut.model_validate(db.get(VideoAnalysis, analysis.id))
     result.queue_position = position or None
     return result
+
+
+@router.post("/videos/{video_id}/quality", response_model=ClipCheckOut)
+def check_clip(video_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Asks the AI whether the clip is fit for the analysis and how much of it each detail covers.
+
+    Advice only: it is not stored and never blocks an analysis."""
+    video = load_video(db, video_id, user, AccessLevel.CONTRIBUTE)
+    path = video_file_path(video)
+    if not path.is_file():
+        raise AppError(status.HTTP_409_CONFLICT, "VIDEO_FILE_MISSING",
+                       "The video file is not available on the server; upload it again.")
+    try:
+        return HttpClipCheckClient().check(path)
+    except AIServiceError as error:
+        raise AppError(status.HTTP_503_SERVICE_UNAVAILABLE, "AI_UNAVAILABLE", error.user_message) from error
 
 
 @router.get("/videos/{video_id}/analyses", response_model=list[VideoAnalysisOut])
