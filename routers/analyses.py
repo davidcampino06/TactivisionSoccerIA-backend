@@ -2,14 +2,14 @@
 
 import json
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
 from errors import AppError, domain_error
 from dependencies import AccessLevel, get_current_user, load_analysis, load_player
-from models import AnalysisStrength, Detection, Match, TacticalIndicator, User
+from models import AnalysisStrength, Detection, Match, TacticalIndicator, TrackSnapshot, User
 from routers.recommendations import recommendations_for_analysis
 from schemas import (
     AnalysisResultOut, DetectionOut, StrengthOut, StrengthStatusUpdate, TacticalIndicatorOut, TrackAssignmentRequest,
@@ -128,14 +128,62 @@ def list_detections(
 def list_tracks(analysis_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     load_analysis(db, analysis_id, user, AccessLevel.READ)
     rows = (db.query(Detection.track_id, func.count(), func.min(Detection.frame_number),
-                     func.max(Detection.frame_number), func.avg(Detection.confidence), func.max(Detection.player_id))
+                     func.max(Detection.frame_number), func.avg(Detection.confidence), func.max(Detection.player_id),
+                     func.min(Detection.timestamp), func.max(Detection.timestamp))
               .filter(Detection.video_analysis_id == analysis_id, Detection.track_id.isnot(None))
               .group_by(Detection.track_id).order_by(Detection.track_id).all())
+    photos = {track_id: seconds for track_id, seconds in
+              db.query(TrackSnapshot.track_id, TrackSnapshot.timestamp).filter(TrackSnapshot.analysis_id == analysis_id)}
     return [
         {"track_id": track_id, "label": f"Trayectoria {track_id}", "detections": count, "first_frame": first,
-         "last_frame": last, "mean_confidence": round(float(confidence), 4), "player_id": player_id}
-        for track_id, count, first, last, confidence, player_id in rows
+         "last_frame": last, "mean_confidence": round(float(confidence), 4), "player_id": player_id,
+         "first_seconds": float(first_seconds), "last_seconds": float(last_seconds),
+         "has_snapshot": track_id in photos,
+         "snapshot_seconds": float(photos[track_id]) if track_id in photos else None}
+        for track_id, count, first, last, confidence, player_id, first_seconds, last_seconds in rows
     ]
+
+
+@router.get("/{analysis_id}/tracks/{track_id}/snapshot", response_class=Response,
+            responses={200: {"content": {"image/jpeg": {}}}})
+def track_snapshot(analysis_id: str, track_id: int, user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)):
+    """The photo of a track (best crop of the video): what the staff looks at to tell who is who.
+
+    Analyses made before migration 0021 have no photos: 404, and the app shows the track without one."""
+    load_analysis(db, analysis_id, user, AccessLevel.READ)
+    snapshot = db.get(TrackSnapshot, (analysis_id, track_id))
+    if snapshot is None:
+        raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "This track has no photo.")
+    # A photo never changes once the analysis is saved: the browser can keep it (private: it is a team's data).
+    return Response(content=snapshot.image, media_type="image/jpeg",
+                    headers={"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/{analysis_id}/overlay")
+def analysis_overlay(analysis_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """What the AI saw in each analysed frame, to draw it over the video while it plays.
+
+    ``frames`` is ordered by time; each one is [seconds, boxes] and each box is
+    [x, y, width, height, track id or null, "P" player / "B" ball / "O" other], in pixels of the
+    original video. ``interval`` is the usual time between analysed frames (the AI samples the video),
+    and ``until`` the last second analysed: after it the video has no boxes."""
+    load_analysis(db, analysis_id, user, AccessLevel.READ)
+    rows = (db.query(Detection.timestamp, Detection.bounding_box_x, Detection.bounding_box_y,
+                     Detection.bounding_box_width, Detection.bounding_box_height, Detection.track_id,
+                     Detection.object_type)
+              .filter(Detection.video_analysis_id == analysis_id)
+              .order_by(Detection.timestamp, Detection.track_id).all())
+    kinds = {"PLAYER": "P", "BALL": "B"}
+    frames: list[list] = []
+    for seconds, x, y, width, height, track_id, object_type in rows:
+        seconds = float(seconds)
+        if not frames or frames[-1][0] != seconds:
+            frames.append([seconds, []])
+        frames[-1][1].append([float(x), float(y), float(width), float(height), track_id, kinds.get(object_type, "O")])
+    gaps = sorted(round(b[0] - a[0], 4) for a, b in zip(frames, frames[1:]))
+    return {"frames": frames, "interval": gaps[len(gaps) // 2] if gaps else 0.0,
+            "until": frames[-1][0] if frames else 0.0}
 
 
 @router.put("/{analysis_id}/tracks/{track_id}/player")
