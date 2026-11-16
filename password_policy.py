@@ -15,17 +15,6 @@ COMMON_PASSWORDS = frozenset({
     "futbol123", "football", "soccer123", "colombia1", "bienvenido", "welcome1",
 })
 
-RULE_MESSAGES = {
-    "length": f"Between {PASSWORD_MIN_LENGTH} and {PASSWORD_MAX_LENGTH} characters.",
-    "upper": "At least one uppercase letter.",
-    "lower": "At least one lowercase letter.",
-    "digit": "At least one number.",
-    "special": "At least one special character.",
-    "no_spaces": "No spaces.",
-    "no_personal_data": "Must not contain your name or e-mail.",
-    "not_common": "Must not be a common password.",
-}
-
 
 def _personal_fragments(email: str, first_name: str, last_name: str) -> list[str]:
     fragments = [first_name, last_name, email.split("@")[0]]
