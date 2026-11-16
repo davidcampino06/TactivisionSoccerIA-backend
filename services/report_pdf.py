@@ -163,7 +163,111 @@ def _table(pdf: ReportPdf, block: dict) -> None:
     pdf.ln(3)
 
 
+SERIES = ((57, 135, 229), (217, 89, 38), (25, 158, 112), (201, 133, 0))   # one colour per compared match
+CHANGE = {"BETTER": (27, 135, 80), "WORSE": (199, 54, 44), "SAME": (120, 128, 125), None: (120, 128, 125)}
+
+
+def _legend(pdf: ReportPdf, block: dict) -> None:
+    """One line per compared match with the colour it has in every chart."""
+    for index, (title, detail) in enumerate(block["items"]):
+        y = pdf.get_y()
+        pdf.set_fill_color(*SERIES[index % len(SERIES)])
+        pdf.rect(pdf.l_margin, y + 1.2, 3.6, 3.6, style="F")
+        pdf.set_xy(pdf.l_margin + 6, y)
+        pdf.set_font("helvetica", "B", 10)
+        pdf.set_text_color(*INK)
+        pdf.cell(0, 6, clean(title), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_x(pdf.l_margin + 6)
+        pdf.set_font("helvetica", size=8.5)
+        pdf.set_text_color(*MUTED)
+        pdf.multi_cell(0, 4.5, clean(detail), new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(1.5)
+    pdf.ln(1)
+
+
+def _bars(pdf: ReportPdf, block: dict) -> None:
+    """One indicator: a horizontal bar per match (its colour), the value at the end, the threshold as a line."""
+    bars = block["bars"]
+    height = 9 + 6 * len(bars) + 7
+    if pdf.get_y() + height > pdf.h - pdf.b_margin:
+        pdf.add_page()
+    pdf.set_font("helvetica", "B", 9.5)
+    pdf.set_text_color(*INK)
+    pdf.cell(0, 5, clean(block["title"]), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("helvetica", size=8)
+    pdf.set_text_color(*MUTED)
+    pdf.cell(0, 4, clean(block["note"]), new_x="LMARGIN", new_y="NEXT")
+    label_width, value_width = 42, 30
+    track = pdf.w - pdf.l_margin - pdf.r_margin - label_width - value_width
+    numbers = [bar["value"] for bar in bars if bar["value"] is not None] + ([block["threshold"]] if block.get("threshold") is not None else [])
+    top = max([abs(n) for n in numbers] or [1]) or 1
+    start_y = pdf.get_y() + 1
+    for index, bar in enumerate(bars):
+        y = start_y + index * 6
+        pdf.set_xy(pdf.l_margin, y)
+        pdf.set_font("helvetica", size=8)
+        pdf.set_text_color(*INK)
+        pdf.cell(label_width, 5, clean(bar["label"])[:28])
+        x = pdf.l_margin + label_width
+        pdf.set_fill_color(238, 240, 239)
+        pdf.rect(x, y + 0.8, track, 3.4, style="F")
+        if bar["value"] is not None:
+            pdf.set_fill_color(*SERIES[bar["slot"] % len(SERIES)])
+            pdf.rect(x, y + 0.8, max(0.6, track * abs(bar["value"]) / top), 3.4, style="F")
+        pdf.set_xy(x + track + 2, y)
+        pdf.set_font("helvetica", "B" if bar.get("flag") else "", 8)
+        pdf.set_text_color(*(SEVERITY["HIGH"] if bar.get("flag") else INK))
+        pdf.cell(value_width - 2, 5, clean(bar["text"] + (" !" if bar.get("flag") else "")))
+    if block.get("threshold") is not None:
+        x = pdf.l_margin + label_width + track * abs(block["threshold"]) / top
+        pdf.set_draw_color(*INK)
+        pdf.set_line_width(0.3)
+        pdf.set_dash_pattern(dash=1, gap=1)
+        pdf.line(x, start_y, x, start_y + 6 * len(bars) - 1)
+        pdf.set_dash_pattern()
+    pdf.set_xy(pdf.l_margin, start_y + 6 * len(bars))
+    pdf.set_font("helvetica", size=8)
+    pdf.set_text_color(*CHANGE[block.get("assessment")])
+    pdf.cell(0, 5, clean(block["difference"]), new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(2.5)
+
+
+def _changes(pdf: ReportPdf, block: dict) -> None:
+    """Differences chart: change of each indicator from the first to the last match, in percent of the
+    first. Bars grow to the right when the value went up and to the left when it went down; green is
+    better for the team, red is worse."""
+    rows = block["rows"]
+    if pdf.get_y() + 8 + 6.5 * min(len(rows), 6) > pdf.h - pdf.b_margin:
+        pdf.add_page()
+    label_width, value_width = 66, 24
+    track = pdf.w - pdf.l_margin - pdf.r_margin - label_width - value_width
+    centre = pdf.l_margin + label_width + track / 2
+    top = max([abs(row["percent"]) for row in rows] or [1]) or 1
+    for row in rows:
+        if pdf.get_y() + 7 > pdf.h - pdf.b_margin:
+            pdf.add_page()
+        y = pdf.get_y()
+        pdf.set_font("helvetica", size=8)
+        pdf.set_text_color(*INK)
+        pdf.set_xy(pdf.l_margin, y)
+        pdf.cell(label_width, 5.5, clean(row["label"])[:44])
+        length = (track / 2) * abs(row["percent"]) / top
+        pdf.set_fill_color(*CHANGE[row["assessment"]])
+        pdf.rect(centre if row["percent"] >= 0 else centre - length, y + 1, max(0.5, length), 3.5, style="F")
+        pdf.set_xy(pdf.l_margin + label_width + track + 2, y)
+        pdf.set_font("helvetica", "B", 8)
+        pdf.set_text_color(*CHANGE[row["assessment"]])
+        pdf.cell(value_width - 2, 5.5, clean(row["text"]), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_draw_color(*LINE)
+        pdf.set_line_width(0.2)
+        pdf.line(centre, y, centre, y + 5.5)
+    pdf.ln(3)
+
+
 RENDERERS = {
+    "legend": _legend,
+    "bars": _bars,
+    "changes": _changes,
     "heading": lambda pdf, block: _heading(pdf, block["text"]),
     "text": lambda pdf, block: _text(pdf, block["text"]),
     "facts": lambda pdf, block: _facts(pdf, block["items"]),
