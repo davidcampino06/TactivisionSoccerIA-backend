@@ -20,14 +20,23 @@ The proximity network (graph + BFS of the AI) is kept whole as JSON in
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import re
 
-from models import AIRecommendation, AnalysisStrength, RecommendationIndicator, TacticalIndicator, new_id, utc_now
-from services.ai_client import AIAnalysisPayload
+from models import (
+    AIRecommendation, AnalysisStrength, RecommendationIndicator, TacticalIndicator, TrackSnapshot, new_id, utc_now,
+)
+from pydantic import ValidationError
+
+from services.ai_client import AIAnalysisPayload, SnapshotPayload
 from services.analysis_state import MAX_WARNING_LENGTH
 
 MAX_TEXT = 255
+# A photo of a track is a small JPEG (the AI scales it to 160 px high): 60 000 bytes is the table's limit.
+MAX_SNAPSHOT_BYTES = 60_000
+JPEG_MAGIC = b"\xff\xd8\xff"
 # Explanation JSON: three short texts plus one frame (about 2 KB); anything far bigger is not kept.
 MAX_EXPLANATION_CHARS = 20_000
 EXPLANATION_TEXTS = ("seen", "meaning", "coach", "keep")  # "keep": how to keep doing a strength
@@ -81,6 +90,27 @@ class AIResultAdapter:
             }
             for item in self._payload.detections
         ]
+
+    def track_snapshots(self) -> list[TrackSnapshot]:
+        """One photo per track that has detections. A photo that is not a small JPEG is skipped: the
+        analysis is worth more than its photos, so a bad one never fails it."""
+        tracks = {item.track_id for item in self._payload.detections if item.track_id is not None}
+        rows = []
+        for raw in self._payload.track_snapshots:
+            try:
+                item = SnapshotPayload.model_validate(raw)
+                image = base64.b64decode(item.image_jpeg_base64, validate=True)
+            except (ValidationError, binascii.Error, ValueError):
+                continue
+            if item.track_id not in tracks:
+                continue
+            if not image.startswith(JPEG_MAGIC) or len(image) > MAX_SNAPSHOT_BYTES:
+                continue
+            rows.append(TrackSnapshot(
+                analysis_id=self._analysis_id, track_id=item.track_id, frame_number=item.frame_number,
+                timestamp=round(item.timestamp, 4), confidence=round(item.confidence, 4),
+                width=item.width, height=item.height, image=image))
+        return rows
 
     def indicators(self) -> list[TacticalIndicator]:
         calculated_at = utc_now()
