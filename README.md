@@ -157,6 +157,13 @@ python tests/e2e_check.py ruta/a/video.mp4
   (gráfica de diferencias entre el primer y el último partido y una gráfica por indicador).
 - Los tipos de acción escritos por el equipo viven en `team_action_types` (`/api/teams/{id}/action-types`);
   el nombre de una jugada admite 50 caracteres y su descripción 100.
+- Sobre el video, una persona dice quién es cada trayectoria con `PUT /api/analyses/{id}/tracks/{n}/identity`:
+  un dorsal (se vincula al jugador de la plantilla que lo usa, o queda solo el número) o `REFEREE` / `OTHER`
+  (árbitro o persona externa, tabla `track_labels`), que quedan fuera de la identificación y del ranking.
+- Datos demo: `python scripts/demo_reset.py --api URL --plan scripts/demo_plan.json --clips CARPETA` borra
+  (tras escribir BORRAR) los partidos, jugadas, tipos y reportes del equipo demo y lo vuelve a cargar por la
+  API: partidos del plan, sus clips subidos y analizados de verdad cuadro por cuadro, tipos de acción,
+  formaciones y jugadas. Solo usa la biblioteca estándar de Python; ejecútalo con el disco persistente puesto.
 - La cola de análisis vive en memoria; al arrancar, los análisis PROCESSING se marcan FAILED y los
   PENDING se re-encolan. Las notificaciones sí se guardan en la base (migración 0004 del repo de BD).
 - El aviso de "regreso de un jugador" no necesita un programador de tareas: se crea al consultar la
