@@ -1,0 +1,27 @@
+{
+  "_ayuda": "Plan de los datos demo. Cada clip se analiza de verdad con YOLO26n (detail: slow = cuadro por cuadro). score va como en la app: [goles del local, goles del visitante]. Los clips deben estar en la carpeta que pases con --clips. Situaciones: BUILD_UP, POSITIONAL_ATTACK, COUNTER_ATTACK, DEFENSIVE_TRANSITION, PRESSING, DEFENSIVE_BLOCK, SET_PIECE.",
+  "detail": "slow",
+  "kit_color": null,
+  "action_types": ["Pelota quieta ensayada", "Salida corta del arquero"],
+  "formations": ["3-4-2-1"],
+  "plays": [
+    {"name": "Salida desde el arco por banda", "action_type": "BUILD_UP", "formation": "4-3-3",
+     "description": "El arquero juega corto al lateral y el interior baja a ofrecer línea de pase.",
+     "notes": "Si el rival presiona alto, el central abre y el pivote se descuelga."},
+    {"name": "Presión tras pérdida", "action_type": "PRESSING", "formation": "4-4-2",
+     "description": "Los tres más cercanos al balón cierran en los primeros 5 segundos tras perderlo.",
+     "notes": "El resto acorta distancias para no dejar espacio entre líneas."},
+    {"name": "Contraataque por banda", "action_type": "COUNTER_ATTACK", "formation": "4-2-3-1",
+     "description": "Al recuperar, el extremo ataca el espacio y el delantero fija a los centrales.",
+     "notes": "Máximo tres pases antes del remate."},
+    {"name": "Córner al primer palo", "action_type": "Pelota quieta ensayada", "formation": "3-4-2-1",
+     "description": "Bloqueo en el primer palo y llegada desde atrás del central más alto.",
+     "notes": "Dos jugadores quedan atrás para el rebote."}
+  ],
+  "matches": [
+    {"opponent": "Marruecos", "date": "2026-10-16T18:00:00", "home": true, "score": [1, 0],
+     "clips": [{"file": "llegada_a_gol.mp4", "situation": "POSITIONAL_ATTACK", "situation_note": "Llegada por dentro hasta el remate"}]},
+    {"opponent": "PSG", "date": "2026-10-23T14:00:00", "home": false, "score": [1, 2],
+     "clips": [{"file": "Ataque.mp4", "situation": "POSITIONAL_ATTACK", "situation_note": "Ataque organizado en el último tercio"}]}
+  ]
+}
