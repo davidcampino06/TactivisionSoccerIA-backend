@@ -28,7 +28,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from models import AIRecommendation, Match, RecommendationIndicator, RecommendationStatus, TacticalIndicator, VideoAnalysis
+from models import AIRecommendation, RecommendationIndicator, RecommendationStatus, TacticalIndicator, VideoAnalysis
 from services.match_plan import ISSUE_PREFIX, counts_for_us
 from services.match_timeline import analysed_matches
 
