@@ -32,6 +32,25 @@ def risk_direction(indicator_name: str) -> str:
     return "below" if indicator_name.split(".", 1)[-1] in RISK_WHEN_LOW else "above"
 
 
+def change_percent(first: float | None, last: float | None) -> float | None:
+    """Change from the first to the last match as a percentage of the first (None when it cannot be
+    computed: a missing value or a first value of 0). It lets indicators of different units share a chart."""
+    if first is None or last is None or abs(first) < 1e-9:
+        return None
+    return round((last - first) / abs(first) * 100, 1)
+
+
+def change_assessment(name: str, first: float | None, last: float | None) -> str | None:
+    """BETTER / WORSE / SAME from the first to the last match: moving away from the risky side of the
+    indicator is better. Changes under 1 % of the first value count as the same."""
+    if first is None or last is None:
+        return None
+    if abs(last - first) <= max(abs(first), 1e-9) * 0.01:
+        return "SAME"
+    towards_risk = (last > first) == (risk_direction(name) == "above")
+    return "WORSE" if towards_risk else "BETTER"
+
+
 def threshold_status(name: str, value: float | None, threshold: float | None) -> str | None:
     """EXCEEDS when the value is on the risky side of the threshold, OK otherwise, None without data."""
     if value is None or threshold is None:
@@ -166,6 +185,8 @@ def compare_matches(db: Session, team_id: str, match_ids: list[str]) -> dict:
             "statuses": [s["indicators"].get(name, {}).get("status") for s in snapshots],
             "values": values,
             "difference_last_vs_first": round(values[-1] - values[0], 4) if values[0] is not None and values[-1] is not None else None,
+            "change_percent": change_percent(values[0], values[-1]),
+            "change_assessment": change_assessment(name, values[0], values[-1]),
             "range": round(max(known) - min(known), 4) if len(known) >= 2 else None,
         })
     return {"matches": snapshots, "indicators": rows, "warnings": _mode_warning(snapshots)}
