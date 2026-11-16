@@ -1,0 +1,163 @@
+{
+  "_fuente": "Dorsales oficiales del Real Madrid para la temporada 2026/27, publicados por el club el 10 de agosto de 2026 (provisionales: pueden cambiar con altas y bajas). https://www.realmadrid.com/es-ES/noticias/futbol/primer-equipo/actualidad/dorsales-del-real-madrid-para-la-temporada-2026-27-10-08-2026 . La pierna hábil no se incluye: no está en esa fuente.",
+  "team": "Real Madrid",
+  "season": "2026-27",
+  "players": [
+    {
+      "shirt_number": 1,
+      "first_name": "Thibaut",
+      "last_name": "Courtois",
+      "position": "GOALKEEPER"
+    },
+    {
+      "shirt_number": 2,
+      "first_name": "Raúl",
+      "last_name": "Asencio",
+      "position": "DEFENDER"
+    },
+    {
+      "shirt_number": 3,
+      "first_name": "Éder",
+      "last_name": "Militão",
+      "position": "DEFENDER"
+    },
+    {
+      "shirt_number": 4,
+      "first_name": "Dean",
+      "last_name": "Huijsen",
+      "position": "DEFENDER"
+    },
+    {
+      "shirt_number": 5,
+      "first_name": "Jude",
+      "last_name": "Bellingham",
+      "position": "MIDFIELDER"
+    },
+    {
+      "shirt_number": 6,
+      "first_name": "Eduardo",
+      "last_name": "Camavinga",
+      "position": "MIDFIELDER"
+    },
+    {
+      "shirt_number": 7,
+      "first_name": "Vinícius",
+      "last_name": "Júnior",
+      "position": "FORWARD"
+    },
+    {
+      "shirt_number": 8,
+      "first_name": "Federico",
+      "last_name": "Valverde",
+      "position": "MIDFIELDER"
+    },
+    {
+      "shirt_number": 9,
+      "first_name": "Endrick",
+      "last_name": "Felipe",
+      "position": "FORWARD"
+    },
+    {
+      "shirt_number": 10,
+      "first_name": "Kylian",
+      "last_name": "Mbappé",
+      "position": "FORWARD"
+    },
+    {
+      "shirt_number": 11,
+      "first_name": "Rodrygo",
+      "last_name": "Goes",
+      "position": "FORWARD"
+    },
+    {
+      "shirt_number": 12,
+      "first_name": "Trent",
+      "last_name": "Alexander-Arnold",
+      "position": "DEFENDER"
+    },
+    {
+      "shirt_number": 13,
+      "first_name": "Andriy",
+      "last_name": "Lunin",
+      "position": "GOALKEEPER"
+    },
+    {
+      "shirt_number": 14,
+      "first_name": "Aurélien",
+      "last_name": "Tchouaméni",
+      "position": "MIDFIELDER"
+    },
+    {
+      "shirt_number": 15,
+      "first_name": "Arda",
+      "last_name": "Güler",
+      "position": "MIDFIELDER"
+    },
+    {
+      "shirt_number": 16,
+      "first_name": "Ibrahima",
+      "last_name": "Konaté",
+      "position": "DEFENDER"
+    },
+    {
+      "shirt_number": 17,
+      "first_name": "Marc",
+      "last_name": "Cucurella",
+      "position": "DEFENDER"
+    },
+    {
+      "shirt_number": 18,
+      "first_name": "Álvaro",
+      "last_name": "Carreras",
+      "position": "DEFENDER"
+    },
+    {
+      "shirt_number": 19,
+      "first_name": "Carlos",
+      "last_name": "Espí",
+      "position": "FORWARD"
+    },
+    {
+      "shirt_number": 20,
+      "first_name": "Bernardo",
+      "last_name": "Silva",
+      "position": "MIDFIELDER"
+    },
+    {
+      "shirt_number": 21,
+      "first_name": "Brahim",
+      "last_name": "Díaz",
+      "position": "FORWARD"
+    },
+    {
+      "shirt_number": 22,
+      "first_name": "Antonio",
+      "last_name": "Rüdiger",
+      "position": "DEFENDER"
+    },
+    {
+      "shirt_number": 23,
+      "first_name": "Ferland",
+      "last_name": "Mendy",
+      "position": "DEFENDER"
+    },
+    {
+      "shirt_number": 24,
+      "first_name": "Denzel",
+      "last_name": "Dumfries",
+      "position": "DEFENDER"
+    },
+    {
+      "shirt_number": 25,
+      "first_name": "Yan",
+      "last_name": "Diomande",
+      "position": "FORWARD"
+    },
+    {
+      "shirt_number": 27,
+      "first_name": "Thiago",
+      "last_name": "Pitarch",
+      "position": "MIDFIELDER"
+    }
+  ]
+}
