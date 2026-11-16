@@ -108,6 +108,20 @@ class _DetectionPayload(BaseModel):
     track_id: int | None = None
 
 
+class SnapshotPayload(BaseModel):
+    """Best crop of one track (the AI's track_crops.py): a small JPEG in base64.
+
+    The response keeps these as plain dicts and the adapter validates each one on its own, so a bad
+    photo is skipped without failing the whole analysis."""
+    track_id: int
+    frame_number: int = Field(ge=0)
+    timestamp: float = Field(ge=0)
+    confidence: float = Field(ge=0, le=1)
+    width: int = Field(gt=0, le=1000)
+    height: int = Field(gt=0, le=1000)
+    image_jpeg_base64: str = Field(max_length=90_000)
+
+
 class _NetworkNodePayload(BaseModel):
     track_id: int
     x: float = Field(ge=0, le=1)
@@ -144,6 +158,8 @@ class AIAnalysisPayload(BaseModel):
     ball_detected: bool
     detections: list[_DetectionPayload]
     tracking: list[dict[str, Any]]
+    # Optional so an AI Service from before the photos still works.
+    track_snapshots: list[dict[str, Any]] = Field(default=[], max_length=300)
     tactical_indicators: list[_IndicatorPayload]
     proximity_network: _ProximityNetworkPayload | None = None
     possible_issues: list[dict[str, Any]]
