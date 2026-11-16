@@ -11,6 +11,8 @@ import jwt
 from config import settings
 
 ACCESS_TOKEN_PURPOSE = "access"
+PLAYBACK_TOKEN_PURPOSE = "playback"
+PLAYBACK_TOKEN_MINUTES = 120
 PASSWORD_RESET_PURPOSE = "password_reset"
 # bcrypt work factor: 2^12 rounds. Each hash also has its own random salt, so two users with the
 # same password get different hashes, and the original password cannot be recovered from the hash.
@@ -58,6 +60,16 @@ def create_access_token(user_id: str, role: str, password_hash: str) -> str:
 
 def decode_access_token(token: str) -> dict:
     return _decode(token, ACCESS_TOKEN_PURPOSE)
+
+
+def create_playback_token(user_id: str, video_id: str) -> str:
+    """Short-lived token to play ONE video. A <video> element cannot send the session header, so the
+    app asks for this link first; it is useless for anything else and for any other video."""
+    return _encode({"sub": user_id, "vid": video_id, "purpose": PLAYBACK_TOKEN_PURPOSE}, PLAYBACK_TOKEN_MINUTES)
+
+
+def decode_playback_token(token: str) -> dict:
+    return _decode(token, PLAYBACK_TOKEN_PURPOSE)
 
 
 def password_fingerprint(password_hash: str) -> str:
