@@ -9,11 +9,11 @@ from sqlalchemy.orm import Session
 from database import get_db
 from errors import AppError, domain_error
 from dependencies import AccessLevel, get_current_user, load_analysis, load_player
-from models import AnalysisStrength, Detection, Match, TacticalIndicator, TrackSnapshot, User
+from models import AnalysisStrength, Detection, Match, Player, TacticalIndicator, TrackLabel, TrackSnapshot, User
 from routers.recommendations import recommendations_for_analysis
 from schemas import (
     AnalysisResultOut, DetectionOut, StrengthOut, StrengthStatusUpdate, TacticalIndicatorOut, TrackAssignmentRequest,
-    VideoAnalysisOut,
+    TrackIdentityRequest, VideoAnalysisOut,
 )
 from services.analysis_facade import get_analysis_facade
 from services.analysis_state import InvalidStateTransition
@@ -129,9 +129,10 @@ def list_tracks(analysis_id: str, user: User = Depends(get_current_user), db: Se
     load_analysis(db, analysis_id, user, AccessLevel.READ)
     rows = (db.query(Detection.track_id, func.count(), func.min(Detection.frame_number),
                      func.max(Detection.frame_number), func.avg(Detection.confidence), func.max(Detection.player_id),
-                     func.min(Detection.timestamp), func.max(Detection.timestamp))
+                     func.min(Detection.timestamp), func.max(Detection.timestamp), func.max(Detection.player_number))
               .filter(Detection.video_analysis_id == analysis_id, Detection.track_id.isnot(None))
               .group_by(Detection.track_id).order_by(Detection.track_id).all())
+    roles = dict(db.query(TrackLabel.track_id, TrackLabel.role).filter(TrackLabel.analysis_id == analysis_id))
     photos = {track_id: seconds for track_id, seconds in
               db.query(TrackSnapshot.track_id, TrackSnapshot.timestamp).filter(TrackSnapshot.analysis_id == analysis_id)}
     return [
@@ -139,8 +140,9 @@ def list_tracks(analysis_id: str, user: User = Depends(get_current_user), db: Se
          "last_frame": last, "mean_confidence": round(float(confidence), 4), "player_id": player_id,
          "first_seconds": float(first_seconds), "last_seconds": float(last_seconds),
          "has_snapshot": track_id in photos,
-         "snapshot_seconds": float(photos[track_id]) if track_id in photos else None}
-        for track_id, count, first, last, confidence, player_id, first_seconds, last_seconds in rows
+         "snapshot_seconds": float(photos[track_id]) if track_id in photos else None,
+         "role": roles.get(track_id, "PLAYER"), "player_number": shirt}
+        for track_id, count, first, last, confidence, player_id, first_seconds, last_seconds, shirt in rows
     ]
 
 
@@ -165,25 +167,63 @@ def analysis_overlay(analysis_id: str, user: User = Depends(get_current_user), d
     """What the AI saw in each analysed frame, to draw it over the video while it plays.
 
     ``frames`` is ordered by time; each one is [seconds, boxes] and each box is
-    [x, y, width, height, track id or null, "P" player / "B" ball / "O" other], in pixels of the
+    [x, y, width, height, track id or null, "P" player / "B" ball / "O" other, confidence], in pixels of the
     original video. ``interval`` is the usual time between analysed frames (the AI samples the video),
     and ``until`` the last second analysed: after it the video has no boxes."""
     load_analysis(db, analysis_id, user, AccessLevel.READ)
     rows = (db.query(Detection.timestamp, Detection.bounding_box_x, Detection.bounding_box_y,
                      Detection.bounding_box_width, Detection.bounding_box_height, Detection.track_id,
-                     Detection.object_type)
+                     Detection.object_type, Detection.confidence)
               .filter(Detection.video_analysis_id == analysis_id)
               .order_by(Detection.timestamp, Detection.track_id).all())
     kinds = {"PLAYER": "P", "BALL": "B"}
     frames: list[list] = []
-    for seconds, x, y, width, height, track_id, object_type in rows:
+    for seconds, x, y, width, height, track_id, object_type, confidence in rows:
         seconds = float(seconds)
         if not frames or frames[-1][0] != seconds:
             frames.append([seconds, []])
-        frames[-1][1].append([float(x), float(y), float(width), float(height), track_id, kinds.get(object_type, "O")])
+        frames[-1][1].append([float(x), float(y), float(width), float(height), track_id, kinds.get(object_type, "O"),
+                              round(float(confidence), 2)])
     gaps = sorted(round(b[0] - a[0], 4) for a, b in zip(frames, frames[1:]))
     return {"frames": frames, "interval": gaps[len(gaps) // 2] if gaps else 0.0,
             "until": frames[-1][0] if frames else 0.0}
+
+
+@router.put("/{analysis_id}/tracks/{track_id}/identity")
+def set_track_identity(analysis_id: str, track_id: int, body: TrackIdentityRequest,
+                       user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Who a track is, typed by a person on the video: a shirt number, the referee or someone outside.
+
+    With a number, the track is linked to the squad player who wears it (and then counts in his
+    ranking); when nobody in the squad has that number, only the number is kept, so the label still
+    follows the track. REFEREE and OTHER take the track out of the identification and the ranking."""
+    analysis = load_analysis(db, analysis_id, user, AccessLevel.CONTRIBUTE)
+    detections = db.query(Detection).filter(Detection.video_analysis_id == analysis_id, Detection.track_id == track_id)
+    if detections.first() is None:
+        raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "Track not found in this analysis.")
+    label = db.get(TrackLabel, (analysis_id, track_id))
+    player = None
+    if body.role == "PLAYER":
+        if label:
+            db.delete(label)
+        number = body.shirt_number
+        if number is not None:
+            team_id = db.get(Match, analysis.video.match_id).team_id
+            # A number belongs to one current player (players.py); one who left the team (INACTIVE) is not matched.
+            player = (db.query(Player).filter(Player.team_id == team_id, Player.shirt_number == number,
+                                              Player.status != "INACTIVE").first())
+        detections.update({Detection.player_id: player.id if player else None, Detection.player_number: number},
+                          synchronize_session=False)
+    else:
+        if label:
+            label.role, label.labelled_by = body.role, user.id
+        else:
+            db.add(TrackLabel(analysis_id=analysis_id, track_id=track_id, role=body.role, labelled_by=user.id))
+        detections.update({Detection.player_id: None, Detection.player_number: None}, synchronize_session=False)
+    db.commit()
+    return {"track_id": track_id, "role": body.role, "player_number": body.shirt_number if body.role == "PLAYER" else None,
+            "player_id": player.id if player else None,
+            "player_name": f"{player.first_name} {player.last_name}" if player else None}
 
 
 @router.put("/{analysis_id}/tracks/{track_id}/player")
@@ -199,6 +239,8 @@ def assign_track_to_player(analysis_id: str, track_id: int, body: TrackAssignmen
         if player.team_id != match.team_id:
             raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "Player belongs to another team.")
         player_number = player.shirt_number
+    if body.player_id and (label := db.get(TrackLabel, (analysis_id, track_id))):
+        db.delete(label)   # choosing a squad player says it is a player after all
     updated = (db.query(Detection)
                  .filter(Detection.video_analysis_id == analysis_id, Detection.track_id == track_id)
                  .update({Detection.player_id: body.player_id, Detection.player_number: player_number},
