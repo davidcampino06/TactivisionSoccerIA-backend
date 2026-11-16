@@ -288,6 +288,43 @@ class TrackLabel(Base):
     labelled_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
+class TrackLink(Base):
+    """Two tracks the AI thinks are one player cut in two (migration 0029), and what a person decided."""
+    __tablename__ = "track_links"
+
+    analysis_id: Mapped[str] = mapped_column(ForeignKey("video_analyses.id", ondelete="CASCADE"), primary_key=True)
+    from_track: Mapped[int] = mapped_column(Integer, primary_key=True)
+    to_track: Mapped[int] = mapped_column(Integer)
+    from_last_frame: Mapped[int] = mapped_column(Integer)
+    to_first_frame: Mapped[int] = mapped_column(Integer)
+    gap_seconds: Mapped[float] = mapped_column(Numeric(6, 3, asdecimal=False))
+    distance_heights: Mapped[float] = mapped_column(Numeric(6, 3, asdecimal=False))
+    color_distance: Mapped[float | None] = mapped_column(Numeric(7, 2, asdecimal=False))
+    same_team: Mapped[bool | None] = mapped_column(Boolean)
+    confidence: Mapped[float] = mapped_column(Numeric(4, 3, asdecimal=False))
+    status: Mapped[str] = mapped_column(String(9), default="SUGGESTED")
+    decided_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
+class TrackRoleSuggestion(Base):
+    """A track whose shirt is of no team, grouped by kit: possible referee or goalkeeper (migration 0030)."""
+    __tablename__ = "track_role_suggestions"
+
+    analysis_id: Mapped[str] = mapped_column(ForeignKey("video_analyses.id", ondelete="CASCADE"), primary_key=True)
+    track_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    suggestion: Mapped[str] = mapped_column(String(21))
+    kit_group: Mapped[int] = mapped_column(Integer)
+    kit_color: Mapped[str] = mapped_column(String(7))
+    kit_tracks: Mapped[int] = mapped_column(Integer)
+    confidence: Mapped[float] = mapped_column(Numeric(4, 3, asdecimal=False))
+    reason: Mapped[str] = mapped_column(String(300))
+    dismissed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
 class TacticalIndicator(Base):
     __tablename__ = "tactical_indicators"
 
