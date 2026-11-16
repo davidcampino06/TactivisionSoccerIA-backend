@@ -17,10 +17,17 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from data_structures import HashTable
-from models import AIRecommendation, AnalysisStrength, Match, RecommendationIndicator, TacticalIndicator, Video, VideoAnalysis
+from sqlalchemy import func
+
+from models import (
+    AIRecommendation, AnalysisStrength, Detection, Match, RecommendationIndicator, TacticalIndicator, TrackSnapshot, Video,
+    VideoAnalysis,
+)
+from services.analysis_facade import video_file_path
 from services.match_plan import ISSUE_PREFIX, counts_for_us
 
 NO_SITUATION = "NONE"
+PHOTOS_PER_CLIP = 4
 
 
 class ClipIndex:
@@ -51,6 +58,17 @@ def latest_clip_analysis(db: Session, video_id: str) -> VideoAnalysis | None:
                   .order_by(VideoAnalysis.completed_at.desc()).all())
     real = [a for a in analyses if a.analysis_mode == "REAL_VIDEO_ANALYSIS"]
     return (real or analyses or [None])[0]
+
+
+def _clip_photos(db: Session, analysis_id: str) -> list[int]:
+    """Tracks whose photo shows the clip: the ones the AI followed the longest (most detections)."""
+    rows = (db.query(TrackSnapshot.track_id)
+              .join(Detection, (Detection.video_analysis_id == TrackSnapshot.analysis_id)
+                    & (Detection.track_id == TrackSnapshot.track_id))
+              .filter(TrackSnapshot.analysis_id == analysis_id)
+              .group_by(TrackSnapshot.track_id).order_by(func.count(Detection.id).desc(), TrackSnapshot.track_id)
+              .limit(PHOTOS_PER_CLIP).all())
+    return [track_id for (track_id,) in rows]
 
 
 def _title(value: str) -> str:
@@ -84,6 +102,8 @@ def clip_library(db: Session, team_id: str) -> dict:
                 index.add(f"strength:{strength['title']}", clip_id)
         clips.append({
             "video_id": video.id, "file_name": video.file_name, "situation": video.situation,
+            # Whether the clip can still be watched (the server keeps the file) and a few faces of it.
+            "file_available": video_file_path(video).is_file(), "photos": _clip_photos(db, analysis.id),
             "situation_note": video.situation_note,
             "match": {"id": match.id, "opponent": match.opponent, "match_date": match.match_date.isoformat()},
             "analysis": {"id": analysis.id, "mode": analysis.analysis_mode,
