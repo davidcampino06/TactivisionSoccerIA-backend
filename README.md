@@ -160,6 +160,14 @@ python tests/e2e_check.py ruta/a/video.mp4
 - Sobre el video, una persona dice quién es cada trayectoria con `PUT /api/analyses/{id}/tracks/{n}/identity`:
   un dorsal (se vincula al jugador de la plantilla que lo usa, o queda solo el número) o `REFEREE` / `OTHER`
   (árbitro o persona externa, tabla `track_labels`), que quedan fuera de la identificación y del ranking.
+- La IA sugiere ayudas para identificar (`GET /api/analyses/{id}/identification-hints`): trayectorias que
+  parecen el mismo jugador cortado por una oclusión (`track_links`) y camisetas de ningún equipo agrupadas
+  por color (`track_role_suggestions`, posible árbitro o arquero). Nada se une solo: con
+  `PUT /api/analyses/{id}/track-links/{de}` una persona acepta, rechaza o deshace cada enlace; aceptado,
+  el dorsal o la marca de una trayectoria vale para toda su cadena (función `track_identities_of`,
+  migración 0034), y si dos ya tenían dorsales distintos responde 409 `TRACK_IDENTITY_CONFLICT`.
+  `PUT /api/analyses/{id}/kits/{grupo}/identity` marca de una vez todas las trayectorias de una camiseta
+  (el árbitro, o el dorsal del arquero) y `PUT /api/analyses/{id}/kits/{grupo}` la descarta.
 - Datos demo: `python scripts/demo_reset.py --api URL --plan scripts/demo_plan.json --clips CARPETA` borra
   (tras escribir BORRAR) los partidos, jugadas, tipos y reportes del equipo demo y lo vuelve a cargar por la
   API: partidos del plan, sus clips subidos y analizados de verdad cuadro por cuadro, tipos de acción,
