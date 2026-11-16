@@ -3,20 +3,24 @@
 import json
 
 from fastapi import APIRouter, Depends, Query, Response, status
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from database import get_db
 from errors import AppError, domain_error
 from dependencies import AccessLevel, get_current_user, load_analysis, load_player
-from models import AnalysisStrength, Detection, Match, Player, TacticalIndicator, TrackLabel, TrackSnapshot, User
+from models import (
+    AnalysisStrength, Detection, Match, TacticalIndicator, TrackLabel, TrackLink, TrackRoleSuggestion,
+    TrackSnapshot, User, utc_now,
+)
 from routers.recommendations import recommendations_for_analysis
 from schemas import (
-    AnalysisResultOut, DetectionOut, StrengthOut, StrengthStatusUpdate, TacticalIndicatorOut, TrackAssignmentRequest,
-    TrackIdentityRequest, VideoAnalysisOut,
+    AnalysisResultOut, DetectionOut, KitDismissRequest, StrengthOut, StrengthStatusUpdate, TacticalIndicatorOut,
+    TrackAssignmentRequest, TrackIdentityRequest, TrackLinkDecisionRequest, VideoAnalysisOut,
 )
 from services.analysis_facade import get_analysis_facade
 from services.analysis_state import InvalidStateTransition
+from services.track_identity import Identity, apply_identity, chain_of, identity_of, merge, player_with_number
 
 router = APIRouter(prefix="/api/analyses", tags=["Video Analysis"])
 
@@ -196,34 +200,112 @@ def set_track_identity(analysis_id: str, track_id: int, body: TrackIdentityReque
 
     With a number, the track is linked to the squad player who wears it (and then counts in his
     ranking); when nobody in the squad has that number, only the number is kept, so the label still
-    follows the track. REFEREE and OTHER take the track out of the identification and the ranking."""
+    follows the track. REFEREE and OTHER take the track out of the identification and the ranking.
+    The tracks joined to this one by accepted links are the same person and get the same identity."""
     analysis = load_analysis(db, analysis_id, user, AccessLevel.CONTRIBUTE)
-    detections = db.query(Detection).filter(Detection.video_analysis_id == analysis_id, Detection.track_id == track_id)
-    if detections.first() is None:
+    if db.query(Detection.id).filter(Detection.video_analysis_id == analysis_id,
+                                     Detection.track_id == track_id).first() is None:
         raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "Track not found in this analysis.")
-    label = db.get(TrackLabel, (analysis_id, track_id))
-    player = None
-    if body.role == "PLAYER":
-        if label:
-            db.delete(label)
-        number = body.shirt_number
-        if number is not None:
-            team_id = db.get(Match, analysis.video.match_id).team_id
-            # A number belongs to one current player (players.py); one who left the team (INACTIVE) is not matched.
-            player = (db.query(Player).filter(Player.team_id == team_id, Player.shirt_number == number,
-                                              Player.status != "INACTIVE").first())
-        detections.update({Detection.player_id: player.id if player else None, Detection.player_number: number},
-                          synchronize_session=False)
-    else:
-        if label:
-            label.role, label.labelled_by = body.role, user.id
-        else:
-            db.add(TrackLabel(analysis_id=analysis_id, track_id=track_id, role=body.role, labelled_by=user.id))
-        detections.update({Detection.player_id: None, Detection.player_number: None}, synchronize_session=False)
+    player = player_with_number(db, analysis, body.shirt_number) if body.role == "PLAYER" else None
+    number = body.shirt_number if body.role == "PLAYER" else None
+    tracks = chain_of(db, analysis_id, track_id)
+    apply_identity(db, analysis_id, tracks, Identity(body.role, player.id if player else None, number), user)
     db.commit()
-    return {"track_id": track_id, "role": body.role, "player_number": body.shirt_number if body.role == "PLAYER" else None,
+    return {"track_id": track_id, "role": body.role, "player_number": number,
             "player_id": player.id if player else None,
-            "player_name": f"{player.first_name} {player.last_name}" if player else None}
+            "player_name": f"{player.first_name} {player.last_name}" if player else None,
+            "tracks": tracks}
+
+
+@router.get("/{analysis_id}/identification-hints")
+def identification_hints(analysis_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """What the AI suggests to tell who is who: tracks that look like one player cut in two (with the
+    decision of a person), the kits of no team (possible referee or goalkeeper) and, for every track of
+    an accepted chain, the first track of its chain (same_player)."""
+    load_analysis(db, analysis_id, user, AccessLevel.READ)
+    links = (db.query(TrackLink).filter(TrackLink.analysis_id == analysis_id)
+               .order_by(TrackLink.status != "SUGGESTED", TrackLink.confidence.desc()).all())
+    suggestions = (db.query(TrackRoleSuggestion).filter(TrackRoleSuggestion.analysis_id == analysis_id)
+                     .order_by(TrackRoleSuggestion.kit_group, TrackRoleSuggestion.track_id).all())
+    kits: dict[int, dict] = {}
+    for item in suggestions:
+        kit = kits.setdefault(item.kit_group, {
+            "kit_group": item.kit_group, "kit_color": item.kit_color, "suggestion": item.suggestion,
+            "reason": item.reason, "confidence": item.confidence, "tracks": [], "dismissed": True})
+        kit["tracks"].append(item.track_id)
+        kit["dismissed"] = kit["dismissed"] and item.dismissed_at is not None
+    same_player = {track: person for track, person in
+                   db.execute(text("SELECT track_id, person_track FROM track_identities_of(:analysis)"),
+                              {"analysis": analysis_id}).all()}
+    return {
+        "links": [{"from_track": link.from_track, "to_track": link.to_track, "gap_seconds": link.gap_seconds,
+                   "distance_heights": link.distance_heights, "color_distance": link.color_distance,
+                   "same_team": link.same_team, "confidence": link.confidence, "status": link.status,
+                   "decided_at": link.decided_at.isoformat() if link.decided_at else None} for link in links],
+        "kits": list(kits.values()),
+        "same_player": same_player,
+    }
+
+
+@router.put("/{analysis_id}/track-links/{from_track}")
+def decide_track_link(analysis_id: str, from_track: int, body: TrackLinkDecisionRequest,
+                      user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """A person says whether two tracks are the same player. Accepting joins their identities: if
+    one of the chain was already identified, the others get the same; if two were identified as
+    different people, nothing changes and the answer says so (409)."""
+    load_analysis(db, analysis_id, user, AccessLevel.CONTRIBUTE)
+    link = db.get(TrackLink, (analysis_id, from_track))
+    if link is None:
+        raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "This link was not suggested for this analysis.")
+    link.status = body.decision
+    link.decided_by, link.decided_at = (None, None) if body.decision == "SUGGESTED" else (user.id, utc_now())
+    db.flush()
+    tracks = chain_of(db, analysis_id, from_track)
+    if body.decision == "ACCEPTED":
+        try:
+            identity = merge([identity_of(db, analysis_id, track) for track in tracks])
+        except ValueError:
+            db.rollback()
+            raise AppError(status.HTTP_409_CONFLICT, "TRACK_IDENTITY_CONFLICT",
+                           "These tracks were identified as different people.") from None
+        if identity is not None:
+            apply_identity(db, analysis_id, tracks, identity, user)
+    db.commit()
+    return {"from_track": from_track, "to_track": link.to_track, "status": link.status, "tracks": tracks}
+
+
+@router.put("/{analysis_id}/kits/{kit_group}")
+def dismiss_kit(analysis_id: str, kit_group: int, body: KitDismissRequest,
+                user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Dismiss the suggestion of a kit (for example somebody on the touchline), or bring it back."""
+    load_analysis(db, analysis_id, user, AccessLevel.CONTRIBUTE)
+    rows = (db.query(TrackRoleSuggestion)
+              .filter(TrackRoleSuggestion.analysis_id == analysis_id, TrackRoleSuggestion.kit_group == kit_group).all())
+    if not rows:
+        raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "No suggestion for this kit.")
+    for row in rows:
+        row.dismissed_at, row.dismissed_by = (utc_now(), user.id) if body.dismissed else (None, None)
+    db.commit()
+    return {"kit_group": kit_group, "dismissed": body.dismissed, "tracks": [row.track_id for row in rows]}
+
+
+@router.put("/{analysis_id}/kits/{kit_group}/identity")
+def set_kit_identity(analysis_id: str, kit_group: int, body: TrackIdentityRequest,
+                     user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Say once who wears a kit of no team: every track of the kit (and of their chains) gets it, for
+    example the referee in his 4 tracks, or the goalkeeper's shirt number in his 6."""
+    analysis = load_analysis(db, analysis_id, user, AccessLevel.CONTRIBUTE)
+    kit_tracks = [track for (track,) in db.query(TrackRoleSuggestion.track_id).filter(
+        TrackRoleSuggestion.analysis_id == analysis_id, TrackRoleSuggestion.kit_group == kit_group)]
+    if not kit_tracks:
+        raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "No suggestion for this kit.")
+    player = player_with_number(db, analysis, body.shirt_number) if body.role == "PLAYER" else None
+    number = body.shirt_number if body.role == "PLAYER" else None
+    tracks = sorted({track for kit_track in kit_tracks for track in chain_of(db, analysis_id, kit_track)})
+    apply_identity(db, analysis_id, tracks, Identity(body.role, player.id if player else None, number), user)
+    db.commit()
+    return {"kit_group": kit_group, "role": body.role, "player_number": number,
+            "player_id": player.id if player else None, "tracks": tracks}
 
 
 @router.put("/{analysis_id}/tracks/{track_id}/player")
