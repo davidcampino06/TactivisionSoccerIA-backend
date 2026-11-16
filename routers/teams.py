@@ -105,7 +105,9 @@ def regenerate_invitation_code(team_id: str, user: User = Depends(get_current_us
 
 @router.get("/{team_id}/analysts", response_model=list[UserOut])
 def list_analysts(team_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    load_team(db, team_id, user, AccessLevel.MANAGE)
+    """The analysts of the team. Everyone in the team sees them (an analyst sees himself and his
+    colleagues); only the coach can remove one."""
+    load_team(db, team_id, user, AccessLevel.READ)
     return db.query(User).filter(User.team_id == team_id, User.role == UserRole.ANALYST).all()
 
 
