@@ -16,6 +16,10 @@ its explanation as JSON, like the recommendations.
 
 The proximity network (graph + BFS of the AI) is kept whole as JSON in
 ``video_analyses.proximity_network``: it is only read to draw it.
+
+The identification hints go to ``track_links`` (tracks that look like one player cut in two) and
+``track_role_suggestions`` (kits of no team). Like the photos, each one is checked on its own and a
+bad one is skipped: they are hints, the analysis is worth more.
 """
 
 from __future__ import annotations
@@ -26,11 +30,12 @@ import json
 import re
 
 from models import (
-    AIRecommendation, AnalysisStrength, RecommendationIndicator, TacticalIndicator, TrackSnapshot, new_id, utc_now,
+    AIRecommendation, AnalysisStrength, RecommendationIndicator, TacticalIndicator, TrackLink, TrackRoleSuggestion,
+    TrackSnapshot, new_id, utc_now,
 )
 from pydantic import ValidationError
 
-from services.ai_client import AIAnalysisPayload, SnapshotPayload
+from services.ai_client import AIAnalysisPayload, RoleSuggestionPayload, SnapshotPayload, TrackLinkPayload
 from services.analysis_state import MAX_WARNING_LENGTH
 
 MAX_TEXT = 255
@@ -94,7 +99,7 @@ class AIResultAdapter:
     def track_snapshots(self) -> list[TrackSnapshot]:
         """One photo per track that has detections. A photo that is not a small JPEG is skipped: the
         analysis is worth more than its photos, so a bad one never fails it."""
-        tracks = {item.track_id for item in self._payload.detections if item.track_id is not None}
+        tracks = self._tracks()
         rows = []
         for raw in self._payload.track_snapshots:
             try:
@@ -110,6 +115,52 @@ class AIResultAdapter:
                 analysis_id=self._analysis_id, track_id=item.track_id, frame_number=item.frame_number,
                 timestamp=round(item.timestamp, 4), confidence=round(item.confidence, 4),
                 width=item.width, height=item.height, image=image))
+        return rows
+
+    def _tracks(self) -> set[int]:
+        return {item.track_id for item in self._payload.detections if item.track_id is not None}
+
+    def track_links(self) -> list[TrackLink]:
+        """The suggested links between tracks of this analysis. Skipped: a link that does not validate,
+        names a track without detections, goes back in time, or uses a track already used (one to one)."""
+        tracks = self._tracks()
+        raw_links = self._payload.track_links.get("links", []) if isinstance(self._payload.track_links, dict) else []
+        rows, ends, starts = [], set(), set()
+        for raw in raw_links[:300]:
+            try:
+                item = TrackLinkPayload.model_validate(raw)
+            except ValidationError:
+                continue
+            if item.from_track == item.to_track or not {item.from_track, item.to_track} <= tracks:
+                continue
+            if item.to_first_frame <= item.from_last_frame or item.from_track in ends or item.to_track in starts:
+                continue
+            ends.add(item.from_track)
+            starts.add(item.to_track)
+            rows.append(TrackLink(
+                analysis_id=self._analysis_id, from_track=item.from_track, to_track=item.to_track,
+                from_last_frame=item.from_last_frame, to_first_frame=item.to_first_frame,
+                gap_seconds=round(item.gap_seconds, 3), distance_heights=round(item.distance_heights, 3),
+                color_distance=None if item.color_distance is None else round(item.color_distance, 2),
+                same_team=item.same_team, confidence=round(item.confidence, 3), status="SUGGESTED"))
+        return rows
+
+    def track_role_suggestions(self) -> list[TrackRoleSuggestion]:
+        """Possible referees and goalkeepers, one per track with detections (a repeated track is skipped)."""
+        tracks = self._tracks()
+        rows, seen = [], set()
+        for raw in self._payload.track_role_suggestions:
+            try:
+                item = RoleSuggestionPayload.model_validate(raw)
+            except ValidationError:
+                continue
+            if item.track_id not in tracks or item.track_id in seen:
+                continue
+            seen.add(item.track_id)
+            rows.append(TrackRoleSuggestion(
+                analysis_id=self._analysis_id, track_id=item.track_id, suggestion=item.suggestion,
+                kit_group=item.kit_group, kit_color=item.kit_color, kit_tracks=item.kit_tracks,
+                confidence=round(item.confidence, 3), reason=item.reason.strip()))
         return rows
 
     def indicators(self) -> list[TacticalIndicator]:
