@@ -171,6 +171,17 @@ class TacticalPlay(Base):
     is_reusable: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class TeamActionType(Base):
+    """An action type written by the team for its plays (migration 0022), besides the fixed ones."""
+    __tablename__ = "team_action_types"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    team_id: Mapped[str] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(40))
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
 class TacticalPlayVersion(Base):
     __tablename__ = "tactical_play_versions"
 
@@ -250,6 +261,21 @@ class Detection(Base):
     bounding_box_height: Mapped[float] = mapped_column(Decimal4)
     player_number: Mapped[int | None] = mapped_column(Integer)
     track_id: Mapped[int | None] = mapped_column(Integer)
+
+
+class TrackSnapshot(Base):
+    """Best crop of a detected track (migration 0021): the staff recognises the player and links him."""
+    __tablename__ = "track_snapshots"
+
+    analysis_id: Mapped[str] = mapped_column(ForeignKey("video_analyses.id", ondelete="CASCADE"), primary_key=True)
+    track_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    frame_number: Mapped[int] = mapped_column(Integer)
+    timestamp: Mapped[float] = mapped_column(Decimal4)
+    confidence: Mapped[float] = mapped_column(Decimal4)
+    width: Mapped[int] = mapped_column(Integer)
+    height: Mapped[int] = mapped_column(Integer)
+    image: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
 class TacticalIndicator(Base):
