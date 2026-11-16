@@ -97,3 +97,18 @@ def test_the_index_answers_with_one_lookup_and_counts():
     index.add("problem:X", "c")  # the same clip twice counts once
     assert index.clips("problem:X") == ["a", "c"] and index.clips("problem:Y") == []
     assert index.counts("situation:") == [{"key": "BUILD_UP", "count": 2, "clips": ["a", "b"]}]
+
+
+def test_each_clip_says_if_it_can_be_watched_and_shows_photos_of_its_players(client, coach, team, fake_ai):
+    import base64, io
+    from PIL import Image
+    out = io.BytesIO()
+    Image.new("RGB", (20, 40), (200, 30, 30)).save(out, "JPEG")
+    match = new_match(client, coach, team, "Nacional", "2026-09-01T15:00:00")
+    video = upload(client, coach, match)
+    payload = fake_payload()
+    payload["track_snapshots"] = [{"track_id": 1, "frame_number": 0, "timestamp": 0.0, "confidence": 0.9, "width": 20,
+                                   "height": 40, "image_jpeg_base64": base64.b64encode(out.getvalue()).decode()}]
+    analyse(client, coach, video, payload)
+    (clip,) = library(client, coach, team)["clips"]
+    assert clip["file_available"] is True and clip["photos"] == [1]
