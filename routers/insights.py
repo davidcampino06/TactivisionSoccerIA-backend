@@ -1,12 +1,13 @@
 """Tactical analysis across matches (compare, evolution, follow-up of the confirmed problems)."""
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from database import get_db
 from errors import domain_error
 from dependencies import AccessLevel, get_current_user, load_team
 from models import User
+from services.comparison_pdf import comparison_pdf
 from services.match_timeline import ComparisonError, analysed_matches, compare_matches, team_evolution
 from services.problem_tracking import problem_tracking
 
@@ -28,6 +29,21 @@ def compare(team_id: str, match_ids: list[str] = Query(...), user: User = Depend
         return compare_matches(db, team_id, match_ids)
     except ComparisonError as error:
         raise domain_error(error, status.HTTP_400_BAD_REQUEST) from error
+
+
+@router.get("/teams/{team_id}/comparisons/pdf", response_class=Response,
+            responses={200: {"content": {"application/pdf": {}}}})
+def compare_pdf(team_id: str, match_ids: list[str] = Query(...), user: User = Depends(get_current_user),
+                db: Session = Depends(get_db)):
+    """The comparison of the chosen matches as a PDF: the matches, a chart of the differences between
+    the first and the last one, and a bar chart per indicator. Same numbers as the comparison page."""
+    team = load_team(db, team_id, user, AccessLevel.READ)
+    try:
+        comparison = compare_matches(db, team_id, match_ids)
+    except ComparisonError as error:
+        raise domain_error(error, status.HTTP_400_BAD_REQUEST) from error
+    return Response(comparison_pdf(team.name, comparison), media_type="application/pdf",
+                    headers={"Content-Disposition": 'attachment; filename="comparacion-de-partidos.pdf"'})
 
 
 @router.get("/teams/{team_id}/evolution")
