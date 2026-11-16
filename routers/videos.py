@@ -3,7 +3,8 @@
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,10 @@ from database import get_db
 from errors import AppError
 from dependencies import AccessLevel, get_current_user, load_match, load_team, load_video
 from models import User, Video, VideoAnalysis
+import rls
+from security import (
+    PLAYBACK_TOKEN_MINUTES, InvalidTokenError, create_playback_token, decode_playback_token,
+)
 from schemas import AnalysisRequest, ClipCheckOut, VideoAnalysisOut, VideoOut, VideoSituationUpdate
 from services.ai_client import AIServiceError, HttpClipCheckClient
 from services.clip_library import clip_library
@@ -124,6 +129,45 @@ def list_videos(match_id: str, user: User = Depends(get_current_user), db: Sessi
 @router.get("/videos/{video_id}", response_model=VideoOut)
 def get_video(video_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return video_out(load_video(db, video_id, user, AccessLevel.READ))
+
+
+# What each stored format is served as. Browsers play MP4 (H.264) and WebM; the others are served
+# with their real type and the app says so when the browser cannot play them.
+MEDIA_TYPES = {"MP4": "video/mp4", "WEBM": "video/webm", "MOV": "video/quicktime", "AVI": "video/x-msvideo",
+               "MKV": "video/x-matroska"}
+
+
+@router.post("/videos/{video_id}/playback")
+def video_playback_link(video_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """A temporary link to watch the uploaded video again (with the analysis drawn on top, in the app).
+
+    The link only plays this video and expires; whoever asks must be able to see the match."""
+    video = load_video(db, video_id, user, AccessLevel.READ)
+    if not video_file_path(video).is_file():
+        raise AppError(status.HTTP_409_CONFLICT, "VIDEO_FILE_MISSING", "The video file is no longer on the server.")
+    token = create_playback_token(user.id, video.id)
+    return {"url": f"/api/videos/{video.id}/stream?token={token}", "media_type": MEDIA_TYPES.get(video.format, "video/mp4"),
+            "expires_in_seconds": PLAYBACK_TOKEN_MINUTES * 60}
+
+
+@router.get("/videos/{video_id}/stream", response_class=FileResponse)
+def stream_video(video_id: str, token: str = Query(min_length=10, max_length=2000), db: Session = Depends(get_db)):
+    """Plays the video (byte ranges supported, so the player can jump). Access is the playback link:
+    it must be for this video, not expired, and its user must still be active and see the match."""
+    try:
+        payload = decode_playback_token(token)
+    except InvalidTokenError as error:
+        raise AppError(status.HTTP_401_UNAUTHORIZED, "SESSION_EXPIRED", str(error)) from error
+    user = db.get(User, payload.get("sub"))
+    if payload.get("vid") != video_id or user is None or not user.is_active:
+        raise AppError(status.HTTP_401_UNAUTHORIZED, "SESSION_EXPIRED", "Invalid playback link.")
+    rls.identify_user(db, user)
+    video = load_video(db, video_id, user, AccessLevel.READ)
+    path = video_file_path(video)
+    if not path.is_file():
+        raise AppError(status.HTTP_409_CONFLICT, "VIDEO_FILE_MISSING", "The video file is no longer on the server.")
+    return FileResponse(path, media_type=MEDIA_TYPES.get(video.format, "application/octet-stream"),
+                        headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"})
 
 
 @router.delete("/videos/{video_id}", status_code=status.HTTP_204_NO_CONTENT)
