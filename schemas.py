@@ -335,8 +335,12 @@ class FormationCreate(BaseModel):
     @classmethod
     def validate_formation_name(cls, value: str) -> str:
         parts = value.split("-")
-        if all(part.isdigit() for part in parts) and sum(int(part) for part in parts) != 10:
-            raise ValueError("Numeric formations must describe 10 outfield players (e.g. 4-3-3).")
+        if all(part.isdigit() for part in parts):
+            if sum(int(part) for part in parts) != 10:
+                raise ValueError("Numeric formations must describe 10 outfield players (e.g. 4-3-3).")
+            # From defence to attack: 2 to 5 lines with 1 to 6 players each (3-4-2-1, 4-1-2-1-2...).
+            if not 2 <= len(parts) <= 5 or any(not 1 <= int(part) <= 6 for part in parts):
+                raise ValueError("A formation has 2 to 5 lines of 1 to 6 players.")
         return value
 
 
@@ -555,6 +559,15 @@ class DetectionOut(ORMModel):
 
 class TrackAssignmentRequest(BaseModel):
     player_id: str | None = Field(description="null removes the identification")
+
+
+class TrackIdentityRequest(BaseModel):
+    """Who a track is, said by a person on the video.
+
+    ``role`` PLAYER with ``shirt_number``: the squad player with that number, or only the number when
+    nobody in the squad wears it. ``shirt_number`` null clears it. REFEREE / OTHER: not a player."""
+    role: Literal["PLAYER", "REFEREE", "OTHER"] = "PLAYER"
+    shirt_number: int | None = Field(default=None, ge=0, le=99)
 
 
 class TacticalIndicatorOut(ORMModel):
