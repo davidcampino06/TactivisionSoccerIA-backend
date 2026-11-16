@@ -31,7 +31,6 @@ class UserRole:
     ADMINISTRATOR = "ADMINISTRATOR"
     COACH = "COACH"
     ANALYST = "ANALYST"
-    SELF_REGISTRATION = (COACH, ANALYST)
 
 
 class User(Base):
