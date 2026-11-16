@@ -103,3 +103,12 @@ def test_link_and_unlink_play_from_match(client, coach, team, match, analyst):
     assert client.get(f"/api/tactical-plays/{play['id']}/matches", headers=h).json() == []
     again = client.delete(f"/api/matches/{match['id']}/tactical-plays/{play['id']}", headers=h)
     assert again.status_code == 404 and again.json()["code"] == "NOT_FOUND"
+
+
+def test_a_coach_can_add_his_own_formation_to_the_catalogue(client, coach, analyst):
+    created = client.post("/api/formations", headers=coach["headers"], json={"name": "3-4-2-1", "description": "Personalizada"})
+    assert created.status_code == 201
+    assert "3-4-2-1" in [f["name"] for f in client.get("/api/formations", headers=analyst["headers"]).json()]
+    assert client.post("/api/formations", headers=coach["headers"], json={"name": "3-4-2-1"}).status_code == 409
+    for wrong in ("10-0", "1-1-1-1-1-5", "7-2-1", "4-3-2", "0-5-5"):
+        assert client.post("/api/formations", headers=coach["headers"], json={"name": wrong}).status_code == 422, wrong
