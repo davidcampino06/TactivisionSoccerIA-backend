@@ -122,6 +122,33 @@ class SnapshotPayload(BaseModel):
     image_jpeg_base64: str = Field(max_length=90_000)
 
 
+class TrackLinkPayload(BaseModel):
+    """Track ``to_track`` looks like ``from_track`` cut in two (the AI's track_stitching.py).
+
+    Kept as plain dicts in the response and validated one by one by the adapter, like the photos:
+    a bad suggestion is skipped, the analysis is saved anyway."""
+    from_track: int = Field(ge=0)
+    to_track: int = Field(ge=0)
+    from_last_frame: int = Field(ge=0)
+    to_first_frame: int = Field(ge=0)
+    gap_seconds: float = Field(gt=0, le=60)
+    distance_heights: float = Field(ge=0, le=100)
+    color_distance: float | None = Field(default=None, ge=0, le=500)
+    same_team: bool | None = None
+    confidence: float = Field(ge=0, le=1)
+
+
+class RoleSuggestionPayload(BaseModel):
+    """A track whose shirt is of no team (the AI's role_suggestions.py)."""
+    track_id: int = Field(ge=0)
+    suggestion: Literal["REFEREE", "GOALKEEPER_OR_REFEREE"]
+    kit_group: int = Field(ge=1, le=100)
+    kit_color: str = Field(pattern=r"^#[0-9a-f]{6}$")
+    kit_tracks: int = Field(ge=1, le=1000)
+    confidence: float = Field(ge=0, le=1)
+    reason: str = Field(min_length=1, max_length=300)
+
+
 class _NetworkNodePayload(BaseModel):
     track_id: int
     x: float = Field(ge=0, le=1)
@@ -160,6 +187,9 @@ class AIAnalysisPayload(BaseModel):
     tracking: list[dict[str, Any]]
     # Optional so an AI Service from before the photos still works.
     track_snapshots: list[dict[str, Any]] = Field(default=[], max_length=300)
+    # Optional so an AI Service from before them still works: tracks cut in two, kits of no team.
+    track_links: dict[str, Any] = {}
+    track_role_suggestions: list[dict[str, Any]] = Field(default=[], max_length=300)
     tactical_indicators: list[_IndicatorPayload]
     proximity_network: _ProximityNetworkPayload | None = None
     possible_issues: list[dict[str, Any]]
