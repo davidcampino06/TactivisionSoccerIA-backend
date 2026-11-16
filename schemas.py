@@ -363,10 +363,32 @@ def _check_configuration_size(value: dict[str, Any]) -> dict[str, Any]:
     return value
 
 
-class TacticalPlayCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=255)
-    description: str | None = Field(default=None, max_length=255)
-    action_type: str | None = Field(default=None, max_length=255)
+# Limits of a play's texts (migration 0022); the app shows how many characters are left.
+PLAY_NAME_MAX = 50
+PLAY_DESCRIPTION_MAX = 100
+ACTION_TYPE_MAX = 40
+
+
+def _clean_text(value: str | None) -> str | None:
+    """Trims and joins repeated spaces; an empty text is no text."""
+    if value is None:
+        return None
+    return " ".join(value.split()) or None
+
+
+class _PlayTexts(BaseModel):
+    """The limits count what is saved (after trimming), not the spaces typed around it."""
+
+    @field_validator("name", "description", "action_type", mode="before", check_fields=False)
+    @classmethod
+    def _trim(cls, value):
+        return _clean_text(value) if isinstance(value, str) else value
+
+
+class TacticalPlayCreate(_PlayTexts):
+    name: str = Field(min_length=1, max_length=PLAY_NAME_MAX)
+    description: str | None = Field(default=None, max_length=PLAY_DESCRIPTION_MAX)
+    action_type: str | None = Field(default=None, max_length=ACTION_TYPE_MAX)
     is_reusable: bool = True
     configuration: dict[str, Any] = Field(
         default_factory=dict, description="Initial version: positions, arrows, notes (JSON)."
@@ -375,11 +397,22 @@ class TacticalPlayCreate(BaseModel):
     _size = field_validator("configuration")(_check_configuration_size)
 
 
-class TacticalPlayUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = Field(default=None, max_length=255)
-    action_type: str | None = Field(default=None, max_length=255)
+class TacticalPlayUpdate(_PlayTexts):
+    name: str | None = Field(default=None, min_length=1, max_length=PLAY_NAME_MAX)
+    description: str | None = Field(default=None, max_length=PLAY_DESCRIPTION_MAX)
+    action_type: str | None = Field(default=None, max_length=ACTION_TYPE_MAX)
     is_reusable: bool | None = None
+
+
+class ActionTypeCreate(_PlayTexts):
+    """An action type written by the coach ("Saque de banda largo")."""
+    name: str = Field(min_length=2, max_length=ACTION_TYPE_MAX)
+
+
+class ActionTypeOut(ORMModel):
+    id: str
+    name: str
+    created_at: datetime
 
 
 class TacticalPlayOut(ORMModel):
