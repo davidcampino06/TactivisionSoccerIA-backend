@@ -27,6 +27,13 @@ INDICATOR_LABELS = {
     "ball_position_x": "Posición del balón (horizontal)",
     "ball_position_y": "Posición del balón (vertical)",
     "ball_detection_rate": "Cuadros con balón detectado",
+    "network_components": "Grupos sin conexión",
+    "isolated_players": "Jugadores aislados",
+    "network_average_links": "Apoyos cercanos por jugador",
+    "network_diameter": "Pases cortos para cruzar el grupo",
+    "pressure_on_ball": "Presión sobre el balón",
+    "attacking_width": "Amplitud en ataque",
+    "players_ahead_of_ball": "Jugadores por delante del balón",
 }
 
 TEAM_LABELS = {"team_a": "Equipo A", "team_b": "Equipo B", "match": "Partido"}
@@ -39,6 +46,9 @@ UNIT_LABELS = {
     "frame_ratio": "de los cuadros",
     "players": "jugadores",
     "players_per_frame_area": "jugadores por área de imagen",
+    "groups": "grupos",
+    "links": "apoyos",
+    "hops": "pases",
 }
 
 SEVERITY_LABELS = {"LOW": "Baja", "MEDIUM": "Media", "HIGH": "Alta"}
