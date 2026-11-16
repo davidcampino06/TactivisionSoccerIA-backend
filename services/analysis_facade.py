@@ -143,6 +143,8 @@ class VideoAnalysisFacade:
         db.add_all(recommendations)
         db.add_all(adapter.strengths())
         db.add_all(adapter.track_snapshots())
+        db.add_all(adapter.track_links())
+        db.add_all(adapter.track_role_suggestions())
         db.flush()
         db.add_all(links)
 
