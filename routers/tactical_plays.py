@@ -2,15 +2,16 @@
 
 import json
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
-from errors import domain_error
+from errors import AppError, domain_error
 from dependencies import AccessLevel, get_current_user, load_tactical_play, load_team
-from models import Match, MatchTacticalPlay, TacticalPlay, TacticalPlayVersion, User
+from models import Match, MatchTacticalPlay, TacticalPlay, TacticalPlayVersion, TeamActionType, User
 from schemas import (
-    MatchOut, TacticalPlayCreate, TacticalPlayOut, TacticalPlaySummaryOut, TacticalPlayUpdate, TacticalPlayVersionCreate,
+    PLAY_DESCRIPTION_MAX, PLAY_NAME_MAX, ActionTypeCreate, ActionTypeOut, MatchOut, TacticalPlayCreate, TacticalPlayOut, TacticalPlaySummaryOut, TacticalPlayUpdate, TacticalPlayVersionCreate,
     TacticalPlayVersionOut,
 )
 from services.tactical_versions import VersionError, activate_version, create_version, undo_version, versions_of
@@ -72,10 +73,53 @@ def get_play(play_id: str, user: User = Depends(get_current_user), db: Session =
 def update_play(play_id: str, body: TacticalPlayUpdate, user: User = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     play = load_tactical_play(db, play_id, user, AccessLevel.MANAGE)
-    for field, value in body.model_dump(exclude_unset=True).items():
+    changes = body.model_dump(exclude_unset=True)
+    if "name" in changes and changes["name"] is None:
+        del changes["name"]          # a play always has a name
+    for field, value in changes.items():
         setattr(play, field, value)
+    # A play saved before the limits may be longer: any change to it has to bring it within them.
+    if len(play.name) > PLAY_NAME_MAX or len(play.description or "") > PLAY_DESCRIPTION_MAX:
+        raise AppError(status.HTTP_422_UNPROCESSABLE_ENTITY, "PLAY_TEXT_TOO_LONG",
+                       f"Name up to {PLAY_NAME_MAX} characters and description up to {PLAY_DESCRIPTION_MAX}.",
+                       name_max=PLAY_NAME_MAX, description_max=PLAY_DESCRIPTION_MAX)
     db.commit()
     return play
+
+
+# ------------------------------------------------------------------ action types written by the team
+@router.get("/teams/{team_id}/action-types", response_model=list[ActionTypeOut])
+def list_action_types(team_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """The action types this team wrote, besides the fixed ones the editor offers."""
+    load_team(db, team_id, user, AccessLevel.READ)
+    return db.query(TeamActionType).filter(TeamActionType.team_id == team_id).order_by(func.lower(TeamActionType.name)).all()
+
+
+@router.post("/teams/{team_id}/action-types", response_model=ActionTypeOut, status_code=status.HTTP_201_CREATED)
+def add_action_type(team_id: str, body: ActionTypeCreate, response: Response, user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    """Saves a new action type. Writing one that already exists (in any case) returns that one."""
+    load_team(db, team_id, user, AccessLevel.MANAGE)
+    existing = (db.query(TeamActionType)
+                  .filter(TeamActionType.team_id == team_id, func.lower(TeamActionType.name) == body.name.lower()).first())
+    if existing:
+        response.status_code = status.HTTP_200_OK
+        return existing
+    entity = TeamActionType(team_id=team_id, name=body.name, created_by=user.id)
+    db.add(entity)
+    db.commit()
+    return entity
+
+
+@router.delete("/teams/{team_id}/action-types/{type_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_action_type(team_id: str, type_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Removes a type from the list. The plays that already use it keep their text."""
+    load_team(db, team_id, user, AccessLevel.MANAGE)
+    entity = db.query(TeamActionType).filter(TeamActionType.id == type_id, TeamActionType.team_id == team_id).first()
+    if entity is None:
+        raise AppError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "Action type not found.")
+    db.delete(entity)
+    db.commit()
 
 
 @router.get("/tactical-plays/{play_id}/matches", response_model=list[MatchOut])
