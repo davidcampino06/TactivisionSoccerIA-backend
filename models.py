@@ -278,6 +278,17 @@ class TrackSnapshot(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
+class TrackLabel(Base):
+    """A track a person marked as the referee or someone outside the game (migration 0023)."""
+    __tablename__ = "track_labels"
+
+    analysis_id: Mapped[str] = mapped_column(ForeignKey("video_analyses.id", ondelete="CASCADE"), primary_key=True)
+    track_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    role: Mapped[str] = mapped_column(String(10))
+    labelled_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    labelled_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
 class TacticalIndicator(Base):
     __tablename__ = "tactical_indicators"
 
