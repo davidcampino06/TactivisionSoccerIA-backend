@@ -148,6 +148,15 @@ python tests/e2e_check.py ruta/a/video.mp4
   Si es `false`, la app desactiva el análisis real y ofrece volver a subir el archivo (`PUT /api/videos/{id}/file`),
   que conserva el mismo video y su historial de análisis. Para producción real: disco persistente o
   almacenamiento de objetos.
+- Para volver a ver un video con su análisis, el servidor debe conservar el archivo: en Render usa un
+  plan de pago con un **disco persistente** (por ejemplo montado en `/var/data`) y `UPLOAD_DIR=/var/data/uploads`.
+  El reproductor pide un enlace temporal (`POST /api/videos/{id}/playback`, 2 horas, solo para ese video) y
+  el video se sirve por rangos de bytes en `GET /api/videos/{id}/stream`; las cajas de cada cuadro salen de
+  `GET /api/analyses/{id}/overlay` y la foto de cada trayectoria de `GET /api/analyses/{id}/tracks/{n}/snapshot`.
+- La comparación de partidos se descarga en PDF con `GET /api/teams/{id}/comparisons/pdf?match_ids=...`
+  (gráfica de diferencias entre el primer y el último partido y una gráfica por indicador).
+- Los tipos de acción escritos por el equipo viven en `team_action_types` (`/api/teams/{id}/action-types`);
+  el nombre de una jugada admite 50 caracteres y su descripción 100.
 - La cola de análisis vive en memoria; al arrancar, los análisis PROCESSING se marcan FAILED y los
   PENDING se re-encolan. Las notificaciones sí se guardan en la base (migración 0004 del repo de BD).
 - El aviso de "regreso de un jugador" no necesita un programador de tareas: se crea al consultar la
