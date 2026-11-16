@@ -62,7 +62,7 @@ def test_the_overlay_groups_what_the_ai_saw_by_frame(client, coach, match, fake_
     times = [frame[0] for frame in overlay["frames"]]
     assert times == sorted(times) and len(times) == len(set(times)) and overlay["until"] == times[-1]
     boxes = [box for _, frame in overlay["frames"] for box in frame]
-    assert all(len(box) == 6 and box[5] in ("P", "B", "O") for box in boxes)
+    assert all(len(box) == 7 and box[5] in ("P", "B", "O") for box in boxes)
     tracked = [box for box in boxes if box[4] is not None]
     assert {box[4] for box in tracked} == {t["track_id"] for t in client.get(
         f"/api/analyses/{analysis_id}/tracks", headers=coach["headers"]).json()}
