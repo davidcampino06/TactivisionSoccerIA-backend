@@ -570,6 +570,17 @@ class TrackIdentityRequest(BaseModel):
     shirt_number: int | None = Field(default=None, ge=0, le=99)
 
 
+class TrackLinkDecisionRequest(BaseModel):
+    """What a person says of a suggested link: the same player (ACCEPTED), not (REJECTED), or undo
+    the decision (SUGGESTED)."""
+    decision: Literal["ACCEPTED", "REJECTED", "SUGGESTED"]
+
+
+class KitDismissRequest(BaseModel):
+    """Dismiss (or bring back) the referee / goalkeeper suggestion of a kit."""
+    dismissed: bool
+
+
 class TacticalIndicatorOut(ORMModel):
     id: str
     video_analysis_id: str
