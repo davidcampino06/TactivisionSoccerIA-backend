@@ -52,6 +52,14 @@ def test_analyst_access_rules(client, team, analyst):
     assert again.status_code == 409
 
 
+def test_an_analyst_sees_the_analysts_of_his_team_but_cannot_remove_them(client, team, analyst):
+    listed = client.get(f"/api/teams/{team['id']}/analysts", headers=analyst["headers"])
+    assert listed.status_code == 200
+    (me,) = listed.json()
+    assert me["email"] == analyst["user"]["email"]
+    assert client.delete(f"/api/teams/{team['id']}/analysts/{me['id']}", headers=analyst["headers"]).status_code == 403
+
+
 def test_invalid_invitation_code(client, team):
     other = register(client, "other.analyst@test.com", "ANALYST")
     assert client.post("/api/teams/join", headers=other["headers"], json={"invitation_code": "FAKE-0000"}).status_code == 404
