@@ -1,4 +1,4 @@
-"""Administrator: manage users and view registered teams and system health.
+"""Administrator: manage users, view and delete registered teams, and system health.
 
 The administrator never sees tactical content (analyses, plays, reports, indicators). Here he only
 gets counts and registration data; aggregated counts read across teams with ``rls.bypass``.
@@ -18,6 +18,7 @@ from log_setup import security_log
 from dependencies import require_roles
 from models import Match, Player, Team, User, UserRole, Video, VideoAnalysis, utc_now
 from schemas import AdminUserOut, AdminUserUpdate, TeamAdminOut
+from services.account_removal import remove_team, remove_user
 from services.ai_client import check_ai_service_health
 from services.analysis_queue import AnalysisJobQueue
 
@@ -68,6 +69,18 @@ def update_user(user_id: str, body: AdminUserUpdate, admin: User = Depends(admin
     db.commit()
     by_id, by_coach = _team_names(db)
     return _admin_user(user, by_id, by_coach)
+
+
+@router.delete("/users/{user_id}")
+def delete_user(user_id: str, admin: User = Depends(admin_only), db: Session = Depends(get_db)):
+    """Permanently delete an account that is not an administrator nor the coach of a team."""
+    return remove_user(db, user_id, admin)
+
+
+@router.delete("/teams/{team_id}")
+def delete_team(team_id: str, admin: User = Depends(admin_only), db: Session = Depends(get_db)):
+    """Permanently delete a team, everything it holds and the accounts of its coach and analysts."""
+    return remove_team(db, team_id, admin)
 
 
 @router.get("/teams", response_model=list[TeamAdminOut])
