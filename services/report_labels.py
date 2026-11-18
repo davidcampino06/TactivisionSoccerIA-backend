@@ -36,7 +36,7 @@ INDICATOR_LABELS = {
     "players_ahead_of_ball": "Jugadores por delante del balón",
 }
 
-TEAM_LABELS = {"team_a": "Equipo A", "team_b": "Equipo B", "match": "Partido"}
+TEAM_LABELS = {"own": "Nuestro equipo", "rival": "Rival", "team_a": "Equipo A", "team_b": "Equipo B", "match": "Partido"}
 
 UNIT_LABELS = {
     "frame_width_ratio": "del ancho de imagen",
