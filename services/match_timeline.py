@@ -124,12 +124,27 @@ def analysed_matches(db: Session, team_id: str) -> list[dict]:
     return result
 
 
+def side_of(indicator_name: str, own_team: str | None) -> str:
+    """The indicator name seen from the user's team: "team_b.team_width" -> "own.team_width" when the
+    user's team was TEAM_B in that clip, "rival.team_width" when it was TEAM_A.
+
+    The AI calls the two teams TEAM_A and TEAM_B in the order it finds them in each clip, so the same
+    club can be A in one match and B in the next. Compared as they come, "Team A" across matches would
+    mix the user's team with the rivals. When the analysis knows which one is ours (the kit colour
+    given when analysing), the indicators are renamed to own / rival; otherwise they stay as they are."""
+    prefix, _, rest = indicator_name.partition(".")
+    if not rest or prefix not in ("team_a", "team_b") or own_team not in ("TEAM_A", "TEAM_B"):
+        return indicator_name
+    return f"{'own' if prefix == own_team.lower() else 'rival'}.{rest}"
+
+
 def _match_snapshot(db: Session, match: Match) -> dict:
     analysis = latest_completed_analysis(db, match.id)
     indicators = {}
+    own_team = analysis.own_team if analysis else None
     if analysis:
         for indicator in db.query(TacticalIndicator).filter(TacticalIndicator.video_analysis_id == analysis.id):
-            indicators[indicator.name] = {
+            indicators[side_of(indicator.name, own_team)] = {
                 "value": indicator.value, "unit": indicator.unit, "threshold": indicator.threshold,
                 "status": threshold_status(indicator.name, indicator.value, indicator.threshold),
             }
@@ -144,6 +159,8 @@ def _match_snapshot(db: Session, match: Match) -> dict:
         "away_score": match.away_score,
         "analysis_id": analysis.id if analysis else None,
         "analysis_mode": analysis.analysis_mode if analysis else None,
+        # Which AI team was the user's in this clip (None when the kit colour was not given).
+        "own_team": own_team,
         "indicators": indicators,
         "possible_issues": len([r for r in recommendations if r.status != "DISMISSED"]),
         "mean_issue_confidence": round(float(np.mean([r.confidence for r in recommendations])), 4) if recommendations else None,
@@ -158,6 +175,10 @@ def _mode_warning(snapshots: list[dict]) -> list[str]:
     missing = [s["opponent"] for s in snapshots if not s["analysis_id"]]
     if missing:
         warnings.append(f"Partidos sin un análisis completado: {', '.join(missing)}.")
+    unknown = [s["opponent"] for s in snapshots if s["analysis_id"] and not s.get("own_team")]
+    if unknown and len(unknown) < len([s for s in snapshots if s["analysis_id"]]):
+        warnings.append("No se sabe cuál es tu equipo en: " + ", ".join(unknown) + ". Sus indicadores quedan como "
+                        "Equipo A / Equipo B; vuelve a analizar indicando el color de tu camiseta para compararlos.")
     return warnings
 
 
