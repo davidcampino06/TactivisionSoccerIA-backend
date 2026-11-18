@@ -76,3 +76,55 @@ def test_the_pdf_needs_two_matches_and_is_private(client, coach, team, fake_ai):
     outsider = register(client, "otro@club.com", "COACH")
     client.post("/api/teams", headers=outsider["headers"], json={"name": "Otro club"})
     assert client.get(f"/api/teams/{team['id']}/comparisons/pdf?{query(ids)}", headers=outsider["headers"]).status_code in (403, 404)
+
+
+# ---------------------------------------------------------------- our team, whatever letter the AI gave it
+def our_team_as_a_then_b(client, coach, team):
+    """Our team is TEAM_A in the first clip and TEAM_B in the second (the AI names them in the order it
+    finds them), with our width 0.40 then 0.50 and the rival's 0.70 then 0.60."""
+    ids = []
+    for opponent, date, own, widths in (("Leipzig", "2026-10-21T14:00:00", "TEAM_A", {"team_a": 0.40, "team_b": 0.70}),
+                                        ("Barcelona", "2026-10-25T15:00:00", "TEAM_B", {"team_a": 0.60, "team_b": 0.50})):
+        match = new_match(client, coach, team, opponent, date)
+        payload = fake_payload()
+        payload["teams"] = {"colors": {"TEAM_A": "#dddddd", "TEAM_B": "#7a2a3a"}, "own_team": own}
+        payload["tactical_indicators"] = [indicator for indicator in payload["tactical_indicators"]
+                                          if not indicator["name"].endswith(".team_width")]
+        payload["tactical_indicators"] += [{"name": f"{side}.team_width", "value": value, "unit": "ratio",
+                                            "threshold": 0.45} for side, value in widths.items()]
+        analyse(client, coach, upload(client, coach, match), payload)
+        ids.append(match["id"])
+    return ids
+
+
+def test_our_team_is_compared_with_itself_even_when_the_ai_called_it_a_then_b(client, coach, team, fake_ai):
+    ids = our_team_as_a_then_b(client, coach, team)
+    data = client.get(f"/api/teams/{team['id']}/comparisons?{query(ids)}", headers=coach["headers"]).json()
+    rows = {row["indicator"]: row for row in data["indicators"]}
+    assert rows["own.team_width"]["values"] == [0.4, 0.5] and rows["own.team_width"]["change_assessment"] == "BETTER"
+    assert rows["rival.team_width"]["values"] == [0.7, 0.6]
+    assert not any(name.startswith(("team_a.", "team_b.")) for name in rows)
+    assert [match["own_team"] for match in data["matches"]] == ["TEAM_A", "TEAM_B"] and data["warnings"] == []
+    headings = [block["text"] for block in comparison_blocks(data) if block["kind"] == "heading"]
+    assert "Nuestro equipo: diferencias" in headings and "Rival: diferencias" in headings
+
+
+def test_a_match_without_our_kit_colour_keeps_a_and_b_and_says_so(client, coach, team, fake_ai):
+    ids = our_team_as_a_then_b(client, coach, team)
+    unknown = new_match(client, coach, team, "Valencia", "2026-11-07T15:00:00")
+    analyse(client, coach, upload(client, coach, unknown), fake_payload())   # no own_team
+    data = client.get(f"/api/teams/{team['id']}/comparisons?{query(ids + [unknown['id']])}", headers=coach["headers"]).json()
+    names = {row["indicator"] for row in data["indicators"]}
+    assert "own.team_width" in names and "team_a.team_width" in names
+    assert any("No se sabe cuál es tu equipo en: Valencia" in warning for warning in data["warnings"])
+
+
+def test_the_evolution_follows_our_team_too(client, coach, team, fake_ai):
+    ids = our_team_as_a_then_b(client, coach, team)
+    third = new_match(client, coach, team, "AEK", "2026-11-04T12:45:00")
+    payload = fake_payload()
+    payload["teams"] = {"colors": {"TEAM_A": "#dddddd", "TEAM_B": "#7a2a3a"}, "own_team": "TEAM_B"}
+    analyse(client, coach, upload(client, coach, third), payload)
+    data = client.get(f"/api/teams/{team['id']}/evolution?{query(ids + [third['id']])}", headers=coach["headers"]).json()
+    assert any(trend["indicator"].startswith("own.") for trend in data["trends"])
+    assert not any(trend["indicator"].startswith(("team_a.", "team_b.")) for trend in data["trends"])
