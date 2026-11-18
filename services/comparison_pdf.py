@@ -15,7 +15,8 @@ from services.report_labels import (
 from services.report_pdf import render_pdf
 
 MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
-GROUPS = ("team_a", "team_b", "match")
+# Our team and the rival when the analyses know which team is ours (match_timeline.side_of), else A / B.
+GROUPS = ("own", "rival", "team_a", "team_b", "match")
 ASSESSMENT = {"BETTER": "mejora", "WORSE": "empeora", "SAME": "sin cambio"}
 
 
@@ -47,7 +48,7 @@ def _delta(value: float, unit: str | None) -> str:
 
 def _group(name: str) -> str:
     prefix = name.split(".", 1)[0]
-    return prefix if prefix in ("team_a", "team_b") else "match"
+    return prefix if prefix in ("own", "rival", "team_a", "team_b") else "match"
 
 
 def comparison_blocks(comparison: dict) -> list[dict]:
