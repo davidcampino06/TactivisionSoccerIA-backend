@@ -20,6 +20,7 @@ logger = logging.getLogger("tactivision.reports")
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 LOGO_ON_DARK = ASSETS / "tactivision_logo_light.png"   # light letters, for the dark band
 LOGO_ON_LIGHT = ASSETS / "tactivision_logo_dark.png"   # dark letters, for the white page
+DEFAULT_CREST = ASSETS / "default_crest.png"           # plain shield when the team has no crest
 
 INK = (11, 15, 14)
 MUTED = (96, 104, 101)
@@ -96,6 +97,8 @@ def _cover(pdf: ReportPdf, title: str, subtitle: str, meta: str | None, crest: b
         pdf.image(str(LOGO_ON_DARK), x=pdf.l_margin, y=11, h=28)
         text_x = pdf.l_margin + 35
     right = pdf.w - pdf.r_margin
+    if not crest and DEFAULT_CREST.is_file():
+        crest = DEFAULT_CREST.read_bytes()
     if crest:
         try:
             pdf.set_fill_color(255, 255, 255)
