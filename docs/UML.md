@@ -39,11 +39,11 @@ flowchart LR
         uc4(["Unirse a un equipo<br/>con el código"])
         uc5(["Gestionar partidos,<br/>eventos y jugadores"])
         uc6(["Subir video y<br/>pedir análisis"])
-        uc7(["Revisar posibles problemas"])
+        uc7(["Revisar posibles problemas<br/>y sus ejercicios sugeridos"])
         uc8(["Diseñar jugadas<br/>en la pizarra"])
         uc9(["Comparar partidos<br/>y ver la evolución"])
         uc10(["Generar y exportar reportes"])
-        uc11(["Administrar usuarios<br/>y equipos"])
+        uc11(["Administrar y eliminar<br/>usuarios y equipos"])
         uc12(["Ver el estado del sistema"])
     end
 
@@ -55,7 +55,9 @@ flowchart LR
 ```
 
 El administrador no tiene acceso al contenido táctico de ningún equipo: la API lo rechaza y, además,
-Row-Level Security en PostgreSQL no le entrega esas filas.
+Row-Level Security en PostgreSQL no le entrega esas filas. Sí puede eliminar un equipo completo (con su
+contenido y sus cuentas) o una cuenta suelta: esa operación cuenta las filas y borra dentro de
+`rls.bypass`, sin leer el contenido táctico, y la cascada de la base hace el resto.
 
 ## 2. Despliegue
 
