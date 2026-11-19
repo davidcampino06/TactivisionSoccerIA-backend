@@ -128,3 +128,15 @@ def test_the_evolution_follows_our_team_too(client, coach, team, fake_ai):
     data = client.get(f"/api/teams/{team['id']}/evolution?{query(ids + [third['id']])}", headers=coach["headers"]).json()
     assert any(trend["indicator"].startswith("own.") for trend in data["trends"])
     assert not any(trend["indicator"].startswith(("team_a.", "team_b.")) for trend in data["trends"])
+
+
+def test_the_comparison_pdf_opens_with_how_many_indicators_improved(client, coach, team, fake_ai):
+    ids = our_team_as_a_then_b(client, coach, team)
+    data = client.get(f"/api/teams/{team['id']}/comparisons?{query(ids)}", headers=coach["headers"]).json()
+    summary = comparison_blocks(data)[0]
+    assert summary["kind"] == "summary"
+    tiles = {tile["label"]: tile["value"] for tile in summary["tiles"]}
+    own = [row for row in data["indicators"] if row["indicator"].startswith("own.")]
+    assert tiles["Partidos comparados"] == "2"
+    assert tiles["Indicadores de nuestro equipo que mejoran"] == str(sum(r.get("change_assessment") == "BETTER" for r in own))
+    assert tiles["Indicadores de nuestro equipo que empeoran"] == str(sum(r.get("change_assessment") == "WORSE" for r in own))
