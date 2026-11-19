@@ -116,3 +116,10 @@ def local_datetime(value: str | None, naive_is_utc: bool) -> str:
     if naive_is_utc:
         moment = (moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)).astimezone(COLOMBIA)
     return moment.strftime("%d/%m/%Y %H:%M")
+
+
+def our_score(home: int | None, away: int | None, is_home: bool) -> str | None:
+    """The score from our side ("2-1" = we scored 2), whatever the venue. None without a score."""
+    if home is None or away is None:
+        return None
+    return f"{home}-{away}" if is_home else f"{away}-{home}"
