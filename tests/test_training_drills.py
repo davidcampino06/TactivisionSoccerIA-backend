@@ -4,7 +4,7 @@ from datetime import datetime
 
 from schemas import RecommendationOut
 from services.reports import MatchReportView, PdfExporter
-from services.training_drills import DRILLS, NOTE, TITLE_TO_CODE, drill_for, drills_for
+from services.training_drills import DRILLS, NOTE, TITLE_TO_CODE, drills_for
 from test_report_exports import SNAPSHOT
 
 COMPACTNESS = "Posible problema táctico: baja compactación del equipo"
@@ -23,10 +23,10 @@ def test_every_issue_title_of_the_ai_has_a_complete_exercise():
 
 
 def test_the_exercise_is_found_by_the_stored_title():
-    drill = drill_for(COMPACTNESS)
+    drill = drills_for(COMPACTNESS)[0]
     assert drill["code"] == "LOW_TEAM_COMPACTNESS" and drill["name"] == "Partido en dos franjas" and drill["note"] == NOTE
-    assert drill_for("  " + COMPACTNESS + " ") == drill
-    assert drill_for("Posible problema táctico: líneas separadas") is None and drills_for("Otro") == []
+    assert drills_for("  " + COMPACTNESS + " ")[0] == drill
+    assert drills_for("Posible problema táctico: líneas separadas") == [] and drills_for("Otro") == []
     assert [d["name"] for d in drills_for(COMPACTNESS)] == ["Partido en dos franjas", "Basculación contra tres porterías",
                                                              "Bloque en sombra"]
 
