@@ -41,8 +41,8 @@ def test_same_view_three_formats():
 def test_blocks_describe_the_document():
     view = MatchReportView(SNAPSHOT, PdfExporter(), {"version": 3})
     kinds = [block["kind"] for block in view.blocks()]
-    assert kinds[0] == "facts" and "issue" in kinds and kinds.count("table") == 2
-    indicators = [block for block in view.blocks() if block["kind"] == "table"][-1]
+    assert kinds[0] == "summary" and "issue" in kinds and kinds.count("table") == 2
+    indicators = next(block for block in view.blocks() if block["kind"] == "table" and block["columns"][0] == "Indicador")
     assert indicators["rows"][0][-1] == "Supera"  # 0.30 is above the 0.22 threshold
     assert view.subtitle() == "Reporte de partido · Atlético Norte · versión 3"
 
@@ -76,3 +76,35 @@ def test_reports_say_what_the_team_did_well():
     assert view.export().startswith(b"%PDF")
     csv_text = MatchReportView(snapshot, CsvExporter()).export()
     assert "fortaleza,Líneas juntas al defender" in csv_text and "No quedó un hueco entre líneas." in csv_text
+
+
+def test_the_pdf_opens_with_a_summary_and_shows_the_score_from_our_side():
+    away = {**SNAPSHOT, "match": {**SNAPSHOT["match"], "is_home": False, "score": "1-2", "result": "WIN"}}
+    view = MatchReportView(away, PdfExporter())
+    tiles = view.blocks()[0]["tiles"]
+    assert tiles[0] == {"value": "2-1", "label": "Victoria", "tone": "good"}
+    assert tiles[1]["value"] == "1" and tiles[1]["label"] == "Posibles problemas (1 de severidad alta)"
+    facts = dict(next(block for block in view.blocks() if block["kind"] == "facts")["items"])
+    assert facts["Marcador (local - visitante)"] == "Rival 1 - 2 Atlético Norte (Victoria)"
+    assert view.meta_line() == "Generado por Mateo Ríos · 10/10/2026 19:47"
+
+
+def test_the_most_severe_issue_comes_first_and_events_close_the_report():
+    issues = [{**SNAPSHOT["possible_issues"][0], "issue": "Baja", "severity": "LOW", "confidence": 0.9},
+              {**SNAPSHOT["possible_issues"][0], "issue": "Alta", "severity": "HIGH", "confidence": 0.5}]
+    blocks = MatchReportView({**SNAPSHOT, "possible_issues": issues}, PdfExporter()).blocks()
+    assert [block["title"] for block in blocks if block["kind"] == "issue"] == ["Alta", "Baja"]
+    assert [block["text"] for block in blocks if block["kind"] == "heading"][-1] == "Eventos del partido"
+
+
+def test_the_pdf_draws_the_team_crest_and_survives_a_broken_one():
+    import io
+
+    from PIL import Image
+    image = io.BytesIO()
+    Image.new("RGBA", (256, 256), (30, 60, 140, 255)).save(image, "PNG")
+    with_crest = MatchReportView(SNAPSHOT, PdfExporter(), {"crest": image.getvalue()}).export()
+    without = MatchReportView(SNAPSHOT, PdfExporter()).export()
+    broken = MatchReportView(SNAPSHOT, PdfExporter(), {"crest": b"not a png"}).export()
+    assert with_crest.startswith(b"%PDF") and len(with_crest) > len(without)
+    assert broken.startswith(b"%PDF")
