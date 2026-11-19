@@ -27,6 +27,7 @@ from models import (
 )
 from services import report_labels as labels
 from services.match_timeline import latest_completed_analysis, team_evolution, threshold_status
+from services.training_drills import NOTE as DRILL_NOTE, drill_for
 from errors import DomainError
 
 
@@ -363,14 +364,22 @@ class MatchReportView(ReportView):
             if not issues:
                 blocks.append({"kind": "text", "text": "No se detectaron posibles problemas tácticos."})
             for issue in issues:
+                drill = drill_for(issue["issue"])
+                details = [("Evidencia", issue["evidence"]), ("Recomendación", recommendations.get(issue["issue"], ""))]
+                if drill:
+                    details += [("Ejercicio sugerido", f"{drill['name']}. {drill['objective']}"),
+                                ("Organización", drill["organization"]), ("Desarrollo", drill["development"]),
+                                ("Claves", " ".join(drill["keys"]))]
                 blocks.append({
-                    "kind": "issue", "title": issue["issue"],
+                    "kind": "issue", "title": issue["issue"], "details": details,
                     "meta": f"Severidad {labels.SEVERITY_LABELS.get(issue['severity'], issue['severity']).lower()} · "
                             f"confianza {labels.percent(issue['confidence'])} · "
                             f"{labels.STATUS_LABELS.get(issue['status'], issue['status']).lower()}",
                     "severity": issue["severity"], "evidence": issue["evidence"],
                     "recommendation": recommendations.get(issue["issue"], ""),
                 })
+            if any(drill_for(issue["issue"]) for issue in issues):
+                blocks.append({"kind": "text", "text": DRILL_NOTE})
 
         strengths = self.snapshot.get("strengths") or []
         if strengths:
