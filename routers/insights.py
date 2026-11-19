@@ -10,6 +10,7 @@ from models import User
 from services.comparison_pdf import comparison_pdf
 from services.match_timeline import ComparisonError, analysed_matches, compare_matches, team_evolution
 from services.problem_tracking import problem_tracking
+from services.team_crest import crest_bytes
 
 router = APIRouter(prefix="/api", tags=["Tactical Analysis"])
 
@@ -42,7 +43,7 @@ def compare_pdf(team_id: str, match_ids: list[str] = Query(...), user: User = De
         comparison = compare_matches(db, team_id, match_ids)
     except ComparisonError as error:
         raise domain_error(error, status.HTTP_400_BAD_REQUEST) from error
-    return Response(comparison_pdf(team.name, comparison), media_type="application/pdf",
+    return Response(comparison_pdf(team.name, comparison, crest_bytes(db, team_id)), media_type="application/pdf",
                     headers={"Content-Disposition": 'attachment; filename="comparacion-de-partidos.pdf"'})
 
 
