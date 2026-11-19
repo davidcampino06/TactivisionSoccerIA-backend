@@ -1,4 +1,4 @@
-"""Situation of each clip (migration 0020) and the clip library with its inverted index."""
+"""Situation of each clip (migrations 0020 and 0035) and the clip library with its inverted index."""
 
 from conftest import register
 from services.clip_library import ClipIndex
@@ -48,6 +48,42 @@ def test_unknown_situations_and_long_notes_are_rejected(client, coach, match):
     video = upload(client, coach, match)
     assert client.patch(f"/api/videos/{video['id']}", headers=coach["headers"],
                         json={"situation": "BUILD_UP", "situation_note": "x" * 201}).status_code == 422
+
+
+def test_the_staff_writes_a_situation_of_its_own(client, coach, analyst, match):
+    video = upload(client, coach, match, situation="OTHER", situation_custom="  Salida   de arco corta ")
+    assert (video["situation"], video["situation_custom"]) == ("OTHER", "Salida de arco corta")
+    exact = client.patch(f"/api/videos/{video['id']}", headers=analyst["headers"],
+                         json={"situation": "OTHER", "situation_custom": "x" * 30}).json()
+    assert exact["situation_custom"] == "x" * 30
+    # Back to a fixed situation: the written name goes away.
+    fixed = client.patch(f"/api/videos/{video['id']}", headers=analyst["headers"],
+                         json={"situation": "PRESSING", "situation_custom": "Presión tras pérdida"}).json()
+    assert (fixed["situation"], fixed["situation_custom"]) == ("PRESSING", None)
+
+
+def test_a_written_situation_needs_a_name_of_up_to_30_characters(client, coach, match):
+    for form in ({"situation": "OTHER"}, {"situation": "OTHER", "situation_custom": "   "},
+                 {"situation": "OTHER", "situation_custom": "x" * 31}):
+        bad = client.post(f"/api/matches/{match['id']}/videos", headers=coach["headers"], data=form,
+                          files={"video": ("clip.mp4", b"fake-bytes", "video/mp4")})
+        assert bad.status_code == 422 and bad.json()["code"] == "INVALID_SITUATION", form
+    video = upload(client, coach, match)
+    assert client.patch(f"/api/videos/{video['id']}", headers=coach["headers"],
+                        json={"situation": "OTHER", "situation_custom": "x" * 31}).status_code == 422
+
+
+def test_each_written_situation_has_its_own_filter(client, coach, team, fake_ai):
+    match = new_match(client, coach, team, "Nacional", "2026-09-01T15:00:00")
+    short = upload(client, coach, match, situation="OTHER", situation_custom="Salida de arco corta")
+    long_ball = upload(client, coach, match, situation="OTHER", situation_custom="Pelotazo al 9")
+    for video in (short, long_ball):
+        analyse(client, coach, video, with_own_team("TEAM_A"))
+    data = library(client, coach, team)
+    assert {c["video_id"]: c["situation_custom"] for c in data["clips"]} == {
+        short["id"]: "Salida de arco corta", long_ball["id"]: "Pelotazo al 9"}
+    assert data["facets"]["situations"] == [{"key": "OTHER:Pelotazo al 9", "count": 1, "clips": [long_ball["id"]]},
+                                            {"key": "OTHER:Salida de arco corta", "count": 1, "clips": [short["id"]]}]
 
 
 def test_the_library_lists_analysed_clips_of_our_team_with_counts(client, coach, team, fake_ai):
