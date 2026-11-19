@@ -25,9 +25,10 @@ models.py            entidades = tablas del ERD (TactiSoccerIA-db/sql/schema.sql
 schemas.py           contratos Pydantic de la API
 security.py          bcrypt + JWT (acceso y recuperación de contraseña)
 dependencies.py      usuario actual, roles y TeamAccessPolicy (reglas de equipo)
-data_structures.py   Stack, Queue, DoublyLinkedList
+data_structures.py   Stack, Queue, DoublyLinkedList, HashTable, PriorityQueue (montículo)
 singleton.py         SingletonMeta
-create_admin.py      crea la cuenta ADMINISTRATOR preconfigurada
+create_admin.py      crea (o actualiza) una cuenta ADMINISTRATOR desde la consola del servidor
+assets/              logo TVIA (letras claras y oscuras) y escudo genérico para los reportes PDF
 routers/             endpoints por módulo
 services/            lógica de negocio y patrones
 tests/               pytest contra PostgreSQL real + e2e_check.py
@@ -45,7 +46,7 @@ tests/               pytest contra PostgreSQL real + e2e_check.py
 | **Abstract Factory** | `services/ai_client.py` (`AnalysisSourceFactory`) | Crea la FAMILIA cliente + validador coherente: datos reales nunca se validan como simulados ni al revés |
 | **Decorator** | `RetryingAIClient`, `LoggingAIClient` | Reintentos (Render "despertando") y medición de tiempo sobre cualquier cliente, sin modificarlo |
 | **Adapter** | `services/ai_result_adapter.py` · AI: `ByteTrackTracker` | Traduce el JSON del AI Service a las tablas del ERD / adapta la librería `supervision` |
-| **Bridge** | `services/reports.py` (`ReportView` × `ReportExporter`) | Tipos de reporte (Match, Analysis, Evolution) y formatos (JSON, CSV) crecen por separado |
+| **Bridge** | `services/reports.py` (`ReportView` × `ReportExporter`) | Tipos de reporte (Match, Analysis, Evolution) y formatos (JSON, CSV, PDF) crecen por separado |
 | **Builder** | `services/reports.py` (`ReportBuilder` + `ReportDirector`) | El snapshot del reporte se arma por secciones; los 3 tipos reutilizan el mismo builder |
 | **Prototype** | `services/tactical_versions.py` | Una nueva versión de jugada táctica es un clon profundo de otra + cambios; el original no se altera |
 | **Singleton** | `singleton.py` → `AnalysisJobQueue`, `NotificationCenter` | Una única cola/worker y un único bus de eventos por proceso |
@@ -70,6 +71,14 @@ de abstracciones).
   gestionar jugadores, jugadas ni borrar.
 - ADMINISTRATOR gestiona usuarios y ve equipos registrados (`/api/admin/teams`, sin código ni
   contenido táctico); recibe 403 en jugadores, partidos, videos, análisis y reportes.
+- ADMINISTRATOR puede eliminar para siempre un equipo con todo lo suyo (plantilla, partidos, videos,
+  análisis, jugadas, reportes, escudo, las cuentas de su entrenador y sus analistas y los archivos de
+  video del disco) o una cuenta suelta (`services/account_removal.py`). No se elimina un equipo con un
+  análisis en curso (409 `TEAM_ANALYSIS_RUNNING`), ni al entrenador de un equipo por separado (409
+  `COACH_OWNS_TEAM`), ni una cuenta de administrador (403). Cada eliminación queda en el log de seguridad.
+- Las cuentas de administrador no se registran desde la app: `create_admin.py` las crea con
+  `ADMIN_EMAIL` y `ADMIN_PASSWORD` (mínimo 12 caracteres y las reglas de contraseña). En Render se corre
+  desde la pestaña Shell del servicio, donde la conexión a la base ya está configurada.
 - Contraseñas con bcrypt; JWT firmado con `JWT_SECRET_KEY`; token de recuperación de un solo uso.
 - Logout: JWT es stateless; el cliente elimina el token (expira según `ACCESS_TOKEN_EXPIRE_MINUTES`).
 - Cada token de sesión lleva la huella de la contraseña (`fp`): al cambiarla o restablecerla, las
@@ -84,7 +93,7 @@ de abstracciones).
 |---|---|
 | Sistema | `GET /api/hello`, `GET /api/status` (backend, database, ai_service) |
 | Auth | `POST /api/auth/register · login · logout · password-recovery · password-reset · change-password`, `GET/PUT /api/auth/me` |
-| Admin | `GET /api/admin/users`, `PATCH /api/admin/users/{id}`, `GET /api/admin/teams` |
+| Admin | `GET /api/admin/users`, `PATCH /api/admin/users/{id}`, `DELETE /api/admin/users/{id}`, `GET /api/admin/teams`, `DELETE /api/admin/teams/{id}` |
 | Equipos | `POST /api/teams`, `GET /api/teams/mine`, `POST /api/teams/join`, `GET/PUT /api/teams/{id}` (incluye `kit_color`), `POST /api/teams/{id}/invitation-code`, `GET/DELETE /api/teams/{id}/analysts[/{userId}]` |
 | Escudo | `GET/PUT/DELETE /api/teams/{id}/crest`: solo personas del equipo lo ven y solo el entrenador lo cambia; toda imagen (PNG, JPG o WebP, máx. 2 MB) se vuelve a dibujar como PNG de 256 px con Pillow (`services/team_crest.py`), así se descartan metadatos, SVG con código y archivos disfrazados |
 | Jugadores | `GET/POST /api/teams/{id}/players`, `GET/PUT/DELETE /api/players/{id}`, `GET /api/players/{id}/history`, `GET /api/players/{id}/appearances`, `GET /api/teams/{id}/player-stats` (datos del ranking). Estado `ACTIVE`, `INJURED`, `SUSPENDED` o `UNAVAILABLE` (motivo personal u otro), con `availability_note` (motivo) y `expected_return` (regreso estimado) |
@@ -92,12 +101,34 @@ de abstracciones).
 | Diseño táctico | `GET/POST /api/formations`, `GET/POST /api/teams/{id}/tactical-plays`, versiones: crear (clon), activar, `undo` |
 | Videos | `POST/GET /api/matches/{id}/videos`, `GET/DELETE /api/videos/{id}`, `PUT /api/videos/{id}/file` (volver a subir el archivo), **`POST /api/videos/{id}/analysis`** (202) |
 | Análisis | `GET /api/analyses/{id}`, `/result` (incluye la red de cercanía: grafo + BFS de la IA, y `strengths`: lo que cada equipo hizo bien, con su explicación), `/indicators`, `/detections`, `/tracks`, `PUT /tracks/{trackId}/player`, `POST /cancel` |
-| Recomendaciones | `GET /api/matches/{id}/recommendations`, `PATCH /api/recommendations/{id}` (review/confirm/dismiss), `GET /api/teams/{id}/review-queue` (heap) |
+| Recomendaciones | `GET /api/matches/{id}/recommendations`, `PATCH /api/recommendations/{id}` (review/confirm/dismiss), `GET /api/teams/{id}/review-queue` (heap). Cada posible problema trae `drills`: sus tres ejercicios de entrenamiento sugeridos |
 | Comparación | `GET /api/teams/{id}/comparisons?match_ids=a&match_ids=b` (≥2), `GET /api/teams/{id}/evolution` (≥3) |
-| Reportes | `POST/GET /api/teams/{id}/reports`, `GET /api/reports/{id}`, `GET /api/reports/{id}/export?format=json|csv|pdf` |
+| Reportes | `POST/GET /api/teams/{id}/reports`, `GET /api/reports/{id}`, `GET /api/reports/{id}/export?format=json|csv|pdf`, `GET /api/teams/{id}/comparisons/pdf?match_ids=...` |
 | Notificaciones | `GET /api/notifications` (`?unread_only=true`), `GET /api/notifications/unread-count`, `POST /api/notifications/{id}/read`, `POST /api/notifications/read-all`, `DELETE /api/notifications/{id}` y `DELETE /api/notifications` (solo de la campana de quien borra) |
 
-Documentación interactiva: http://localhost:8000/docs
+Documentación interactiva: http://localhost:8000/docs (con `ENABLE_DOCS=true`; en producción está apagada).
+
+En total son 117 endpoints bajo `/api`.
+
+## Ejercicios de entrenamiento sugeridos
+
+`services/training_drills.py` asocia cada tipo de posible problema que detecta la IA (12 códigos de
+`tactical_insights.py` del AI Service, 14 títulos) con **tres ejercicios**: uno principal y dos
+alternativas, 36 en total. Cada ejercicio tiene objetivo, organización (espacio, jugadores y tiempos),
+desarrollo, claves y una variante. La IA no los calcula: es un catálogo fijo escrito por el equipo a
+partir de prácticas comunes de entrenamiento, y cada respuesta lo aclara (`note`). Como los posibles
+problemas guardados conservan el título de la regla y no su código, el catálogo se busca por título;
+por eso también funciona con los análisis hechos antes de existir el catálogo.
+
+## Reportes PDF
+
+`services/report_pdf.py` dibuja el reporte de partido, el de análisis, el de evolución y la comparación
+con el mismo diseño: una franja oscura con el logo TVIA (`assets/`), el título, quién lo generó y cuándo,
+y el escudo del equipo a la derecha (`services/team_crest.crest_bytes`; si el equipo no subió escudo,
+`assets/default_crest.png`); un resumen en recuadros; secciones numeradas; y el logo con el número de
+página en cada hoja. El reporte de partido ordena los posibles problemas por severidad, muestra el
+marcador desde nuestro lado (`report_labels.our_score`) y explica el ejercicio principal de cada
+problema con los nombres de las alternativas. Un escudo dañado nunca impide generar el PDF.
 
 ## Logs
 
@@ -133,7 +164,7 @@ uvicorn main:app --reload --port 8000
 ## Tests
 
 ```bash
-# Base de datos de prueba VACÍA (se reinicia en cada ejecución)
+# Base de datos de prueba VACÍA (se reinicia en cada ejecución): 320 pruebas
 set TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/tactivision_test
 python -m pytest -q
 
@@ -143,11 +174,11 @@ python tests/e2e_check.py ruta/a/video.mp4
 
 ## Limitaciones actuales
 
-- Los videos se guardan en `UPLOAD_DIR`. En Render (plan gratuito) ese disco se borra al reiniciar o
-  redesplegar: los análisis ya hechos se conservan en la base, y cada video indica `file_available`.
-  Si es `false`, la app desactiva el análisis real y ofrece volver a subir el archivo (`PUT /api/videos/{id}/file`),
-  que conserva el mismo video y su historial de análisis. Para producción real: disco persistente o
-  almacenamiento de objetos.
+- Los videos se guardan en `UPLOAD_DIR`. En producción el backend corre en Render con un disco
+  persistente de 2 GB montado en `/var/data` (`UPLOAD_DIR=/var/data/uploads`). Sin disco persistente
+  (plan gratuito) los archivos se borran al reiniciar: los análisis se conservan en la base y cada video
+  indica `file_available`; si es `false`, la app ofrece volver a subir el archivo
+  (`PUT /api/videos/{id}/file`), que conserva el mismo video y su historial de análisis.
 - Para volver a ver un video con su análisis, el servidor debe conservar el archivo: en Render usa un
   plan de pago con un **disco persistente** (por ejemplo montado en `/var/data`) y `UPLOAD_DIR=/var/data/uploads`.
   El reproductor pide un enlace temporal (`POST /api/videos/{id}/playback`, 2 horas, solo para ese video) y
