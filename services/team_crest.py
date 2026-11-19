@@ -57,3 +57,10 @@ def normalize_crest(raw: bytes) -> bytes:
     if len(data) > MAX_STORED_BYTES:                    # a 256 px PNG is far smaller; kept as a guard
         raise CrestError("CREST_TOO_LARGE", "The crest image is too large.")
     return data
+
+
+def crest_bytes(db, team_id: str) -> bytes | None:
+    """The team's crest PNG for the PDF reports, or None when the team has not uploaded one."""
+    from models import TeamCrest  # local import: this module is also used without a database
+    crest = db.get(TeamCrest, team_id)
+    return crest.image if crest is not None else None
