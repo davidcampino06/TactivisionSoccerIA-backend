@@ -380,11 +380,6 @@ def source_factory_for(mode: str) -> AnalysisSourceFactory:
         raise ValueError(f"Unknown analysis mode {mode}") from error
 
 
-def register_source_factory(mode: str, factory: type[AnalysisSourceFactory]) -> None:
-    """Allows tests (or future sources) to plug in another family."""
-    _FACTORIES[mode] = factory
-
-
 def check_ai_service_health() -> str:
     try:
         response = httpx.get(f"{settings.ai_service_url}/api/health", timeout=5.0)
