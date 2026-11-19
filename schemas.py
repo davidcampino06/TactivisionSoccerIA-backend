@@ -462,9 +462,11 @@ class MatchTacticalPlayRequest(BaseModel):
 
 
 # ----------------------------------------------------------------- videos / AI
-# Tactical situation of a clip (migration 0020), chosen by a person.
+# Tactical situation of a clip (migration 0020), chosen by a person. OTHER: the staff writes its name
+# (situation_custom, migration 0035) when none of the fixed ones fits.
 Situation = Literal["BUILD_UP", "POSITIONAL_ATTACK", "COUNTER_ATTACK", "DEFENSIVE_TRANSITION", "PRESSING",
-                    "DEFENSIVE_BLOCK", "SET_PIECE"]
+                    "DEFENSIVE_BLOCK", "SET_PIECE", "OTHER"]
+SITUATION_CUSTOM_MAX = 30
 
 
 def _clean_note(value: str | None) -> str | None:
@@ -475,8 +477,26 @@ def _clean_note(value: str | None) -> str | None:
 class VideoSituationUpdate(BaseModel):
     situation: Situation | None = None
     situation_note: str | None = Field(default=None, max_length=200)
+    situation_custom: str | None = None
 
     _note = field_validator("situation_note")(classmethod(lambda cls, value: _clean_note(value)))
+
+    @field_validator("situation_custom")
+    @classmethod
+    def _custom(cls, value: str | None) -> str | None:
+        value = " ".join((value or "").split()) or None
+        if value and len(value) > SITUATION_CUSTOM_MAX:
+            raise ValueError(f"The situation has at most {SITUATION_CUSTOM_MAX} characters.")
+        return value
+
+    @model_validator(mode="after")
+    def _custom_only_with_other(self) -> "VideoSituationUpdate":
+        """OTHER needs its name; any other situation keeps no written name."""
+        if self.situation == "OTHER" and not self.situation_custom:
+            raise ValueError("Write the situation of the clip.")
+        if self.situation != "OTHER":
+            self.situation_custom = None
+        return self
 
 
 class VideoOut(ORMModel):
@@ -490,6 +510,7 @@ class VideoOut(ORMModel):
     status: str
     situation: str | None = None
     situation_note: str | None = None
+    situation_custom: str | None = None
     # False when the server no longer has the file (ephemeral disk): a new real analysis needs it again.
     file_available: bool = True
 
