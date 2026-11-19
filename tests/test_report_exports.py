@@ -106,5 +106,5 @@ def test_the_pdf_draws_the_team_crest_and_survives_a_broken_one():
     with_crest = MatchReportView(SNAPSHOT, PdfExporter(), {"crest": image.getvalue()}).export()
     without = MatchReportView(SNAPSHOT, PdfExporter()).export()
     broken = MatchReportView(SNAPSHOT, PdfExporter(), {"crest": b"not a png"}).export()
-    assert with_crest.startswith(b"%PDF") and len(with_crest) > len(without)
+    assert with_crest.startswith(b"%PDF") and without.startswith(b"%PDF") and with_crest != without
     assert broken.startswith(b"%PDF")
