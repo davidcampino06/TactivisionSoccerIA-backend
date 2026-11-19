@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from services.report_labels import (
-    COLOMBIA, RESULT_LABELS, TEAM_LABELS, UNIT_LABELS, format_value, number, split_indicator,
+    COLOMBIA, RESULT_LABELS, TEAM_LABELS, UNIT_LABELS, format_value, number, our_score, split_indicator,
 )
 from services.report_pdf import render_pdf
 
@@ -32,7 +32,9 @@ def _match_title(match: dict) -> str:
 def _match_detail(match: dict) -> str:
     parts = []
     if match.get("result"):
-        parts.append(f"{RESULT_LABELS.get(match['result'], match['result'])} {match['home_score']}-{match['away_score']}")
+        score = our_score(match.get("home_score"), match.get("away_score"), bool(match.get("is_home", True)))
+        venue = "local" if match.get("is_home", True) else "visitante"
+        parts.append(f"{RESULT_LABELS.get(match['result'], match['result'])} {score or ''} ({venue})".replace("  ", " "))
     parts.append("Análisis simulado" if match.get("analysis_mode") == "SIMULATION_MODE" else "Análisis de video real")
     issues = match.get("possible_issues", 0)
     parts.append("1 posible problema" if issues == 1 else f"{issues} posibles problemas")
@@ -51,10 +53,26 @@ def _group(name: str) -> str:
     return prefix if prefix in ("own", "rival", "team_a", "team_b") else "match"
 
 
+def comparison_summary(comparison: dict) -> dict:
+    """Tiles to read first: how many matches, and how many indicators of our team (or of every group,
+    when the analyses do not say which team is ours) got better or worse from the first to the last."""
+    rows = [row for row in comparison["indicators"] if _group(row["indicator"]) == "own"] or comparison["indicators"]
+    measured = [row for row in rows if row.get("change_assessment")]
+    count = lambda verdict: sum(1 for row in measured if row["change_assessment"] == verdict)  # noqa: E731
+    scope = "de nuestro equipo" if any(_group(row["indicator"]) == "own" for row in rows) else "comparados"
+    return {"kind": "summary", "tiles": [
+        {"value": str(len(comparison["matches"])), "label": "Partidos comparados"},
+        {"value": str(count("BETTER")), "label": f"Indicadores {scope} que mejoran", "tone": "good"},
+        {"value": str(count("WORSE")), "label": f"Indicadores {scope} que empeoran", "tone": "bad"},
+        {"value": str(count("SAME")), "label": "Sin cambio"},
+    ]}
+
+
 def comparison_blocks(comparison: dict) -> list[dict]:
     matches = comparison["matches"]
     first, last = matches[0], matches[-1]
     blocks: list[dict] = [
+        comparison_summary(comparison),
         {"kind": "heading", "text": "Partidos comparados"},
         {"kind": "text", "text": "Cada partido tiene el mismo color en todas las gráficas. Están ordenados por fecha: "
                                  "las diferencias se calculan del primero al último."},
@@ -110,12 +128,12 @@ def comparison_blocks(comparison: dict) -> list[dict]:
     return blocks
 
 
-def comparison_pdf(team_name: str, comparison: dict) -> bytes:
+def comparison_pdf(team_name: str, comparison: dict, crest: bytes | None = None) -> bytes:
     matches = comparison["matches"]
     generated = datetime.now(COLOMBIA)
-    subtitle = (f"{team_name} · {len(matches)} partidos · generado el {generated.day} {MONTHS[generated.month - 1]} "
-                f"{generated.year}, {generated:%H:%M}")
-    return render_pdf("Comparación de partidos", subtitle, comparison_blocks(comparison))
+    subtitle = f"{team_name} · {len(matches)} partidos, del {_date(matches[0]['match_date'])} al {_date(matches[-1]['match_date'])}"
+    meta = f"Generado el {generated.day} {MONTHS[generated.month - 1]} {generated.year}, {generated:%H:%M}"
+    return render_pdf("Comparación de partidos", subtitle, comparison_blocks(comparison), meta=meta, crest=crest)
 
 
 
