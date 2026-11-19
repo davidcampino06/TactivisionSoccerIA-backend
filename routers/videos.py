@@ -67,21 +67,21 @@ def video_out(video: Video) -> VideoOut:
 
 @router.post("/matches/{match_id}/videos", response_model=VideoOut, status_code=status.HTTP_201_CREATED)
 def upload_video(match_id: str, video: UploadFile = File(...), situation: str | None = Form(None),
-                 situation_note: str | None = Form(None), user: User = Depends(get_current_user),
-                 db: Session = Depends(get_db)):
+                 situation_note: str | None = Form(None), situation_custom: str | None = Form(None),
+                 user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     load_match(db, match_id, user, AccessLevel.CONTRIBUTE)
-    tag = _situation(situation or None, situation_note)
+    tag = _situation(situation or None, situation_note, situation_custom)
     original_name, stored_name, video_format, size = _store_upload(video)
     entity = Video(match_id=match_id, file_name=original_name, file_path=stored_name, format=video_format, file_size=size,
-                   situation=tag.situation, situation_note=tag.situation_note)
+                   situation=tag.situation, situation_note=tag.situation_note, situation_custom=tag.situation_custom)
     db.add(entity)
     db.commit()
     return video_out(entity)
 
 
-def _situation(situation: str | None, note: str | None) -> VideoSituationUpdate:
+def _situation(situation: str | None, note: str | None, custom: str | None) -> VideoSituationUpdate:
     try:
-        return VideoSituationUpdate(situation=situation, situation_note=note)
+        return VideoSituationUpdate(situation=situation, situation_note=note, situation_custom=custom)
     except ValidationError as error:
         raise AppError(status.HTTP_422_UNPROCESSABLE_ENTITY, "INVALID_SITUATION", "Invalid situation or note.") from error
 
@@ -92,6 +92,7 @@ def classify_video(video_id: str, body: VideoSituationUpdate, user: User = Depen
     """Says which tactical situation the clip shows (a person chooses it; the AI never does)."""
     entity = load_video(db, video_id, user, AccessLevel.CONTRIBUTE)
     entity.situation, entity.situation_note = body.situation, body.situation_note
+    entity.situation_custom = body.situation_custom
     db.commit()
     return video_out(entity)
 
