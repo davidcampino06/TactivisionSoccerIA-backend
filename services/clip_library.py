@@ -27,6 +27,15 @@ from services.analysis_facade import video_file_path
 from services.match_plan import ISSUE_PREFIX, counts_for_us
 
 NO_SITUATION = "NONE"
+OTHER = "OTHER"
+
+
+def situation_key(video: Video) -> str:
+    """Facet of the clip's situation: the fixed code, NONE, or OTHER:<name written by the staff>, so
+    every situation the team writes gets its own filter."""
+    if video.situation == OTHER and video.situation_custom:
+        return f"{OTHER}:{video.situation_custom}"
+    return video.situation or NO_SITUATION
 PHOTOS_PER_CLIP = 4
 
 
@@ -93,7 +102,7 @@ def clip_library(db: Session, team_id: str) -> dict:
                      for s in db.query(AnalysisStrength).filter(AnalysisStrength.analysis_id == analysis.id)
                      if counts_for_us(s.team, analysis.own_team)]
         clip_id = video.id
-        index.add(f"situation:{video.situation or NO_SITUATION}", clip_id)
+        index.add(f"situation:{situation_key(video)}", clip_id)
         for problem in problems:
             if problem["status"] != "DISMISSED":
                 index.add(f"problem:{problem['title']}", clip_id)
@@ -104,7 +113,7 @@ def clip_library(db: Session, team_id: str) -> dict:
             "video_id": video.id, "file_name": video.file_name, "situation": video.situation,
             # Whether the clip can still be watched (the server keeps the file) and a few faces of it.
             "file_available": video_file_path(video).is_file(), "photos": _clip_photos(db, analysis.id),
-            "situation_note": video.situation_note,
+            "situation_note": video.situation_note, "situation_custom": video.situation_custom,
             "match": {"id": match.id, "opponent": match.opponent, "match_date": match.match_date.isoformat()},
             "analysis": {"id": analysis.id, "mode": analysis.analysis_mode,
                          "completed_at": analysis.completed_at.isoformat() if analysis.completed_at else None,
