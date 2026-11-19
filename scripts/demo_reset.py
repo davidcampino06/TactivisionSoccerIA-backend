@@ -166,7 +166,8 @@ def main() -> int:
         for play_name in item.get("plays", []):
             api.call("POST", f"/api/matches/{match['id']}/tactical-plays", {"tactical_play_id": created_plays[play_name]})
         for clip in item.get("clips", []):
-            fields = {key: clip[key] for key in ("situation", "situation_note") if clip.get(key)}
+            fields = {key: clip[key] for key in ("situation", "situation_note", "situation_custom")
+                      if clip.get(key)}
             video = api.upload(f"/api/matches/{match['id']}/videos", args.clips / clip["file"], fields)
             print(f"   {clip['file']} subido")
             body = {"mode": "REAL_VIDEO_ANALYSIS", "frame_stride": stride, "max_frames": max_frames}
