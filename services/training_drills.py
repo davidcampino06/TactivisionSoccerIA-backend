@@ -513,9 +513,3 @@ def drills_for(title: str) -> list[dict]:
     if code is None:
         return []
     return [{"code": code, **drill, "note": NOTE} for drill in DRILLS[code]]
-
-
-def drill_for(title: str) -> dict | None:
-    """The main suggested exercise of a stored possible issue, or None."""
-    found = drills_for(title)
-    return found[0] if found else None
