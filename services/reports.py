@@ -225,7 +225,8 @@ class PdfExporter(ReportExporter):
 
     def render(self, view: "ReportView") -> bytes:
         from services.report_pdf import render_pdf  # imported lazily: only PDF exports need fpdf2
-        return render_pdf(view.title(), view.subtitle(), view.blocks())
+        return render_pdf(view.title(), view.subtitle(), view.blocks(), meta=view.meta_line(),
+                          crest=view.meta.get("crest"))
 
 
 class ReportView(ABC):
@@ -253,27 +254,42 @@ class ReportView(ABC):
         version = f" · versión {self.meta['version']}" if self.meta.get("version") else ""
         return f"{kind} · {team}{version}"
 
+    def meta_line(self) -> str:
+        """Who generated the report and when: printed under the title, on the cover band."""
+        author = self.snapshot.get("generated_by") or "-"
+        when = labels.local_datetime(self.snapshot.get("generated_at"), naive_is_utc=True)
+        return f"Generado por {author} · {when}"
+
     def blocks(self) -> list[dict]:
-        """Format-neutral document: heading, facts, notice, issue and table blocks."""
-        header = {"kind": "facts", "items": [
-            ("Equipo", self.snapshot.get("team", {}).get("name", "-")),
-            ("Generado por", self.snapshot.get("generated_by", "-")),
-            ("Fecha de generación", labels.local_datetime(self.snapshot.get("generated_at"), naive_is_utc=True)),
-        ]}
+        """Format-neutral document: summary, heading, facts, notice, issue and table blocks."""
         notices = [{"kind": "notice", "text": warning} for warning in self.snapshot.get("warnings", [])]
-        return [header, *notices, *self.content_blocks()]
+        return [*notices, *self.content_blocks()]
 
     def export(self) -> str | bytes:
         return self.exporter.render(self)
 
 
-def _match_facts(match: dict) -> dict:
+def _scores(match: dict) -> tuple[int, int] | None:
+    """(home, away) goals from the snapshot's "home-away" score."""
+    if not match.get("score"):
+        return None
+    home, away = (int(goals) for goals in match["score"].split("-"))
+    return home, away
+
+
+def _match_facts(match: dict, team_name: str) -> dict:
     result = labels.RESULT_LABELS.get(match.get("result") or "", "")
+    scores = _scores(match)
+    if scores:
+        home_name, away_name = (team_name, match["opponent"]) if match.get("is_home") else (match["opponent"], team_name)
+        score = f"{home_name} {scores[0]} - {scores[1]} {away_name}" + (f" ({result})" if result else "")
+    else:
+        score = "Sin marcador"
     return {"kind": "facts", "items": [
         ("Rival", match.get("opponent", "-")),
         ("Fecha", labels.local_datetime(match.get("date"), naive_is_utc=False)),
         ("Condición", "Local" if match.get("is_home") else "Visitante"),
-        ("Marcador", f"{match['score']} ({result})" if match.get("score") else "Sin marcador"),
+        ("Marcador (local - visitante)", score),
     ]}
 
 
@@ -302,16 +318,29 @@ class MatchReportView(ReportView):
                  for s in self.snapshot.get("strengths", [])]
         return rows
 
+    def summary(self) -> dict:
+        """The four numbers to read first: score, possible issues (how many are high), strengths, indicators."""
+        match = self.snapshot.get("match") or {}
+        issues = self.snapshot.get("possible_issues") or []
+        high = sum(1 for issue in issues if issue["severity"] == "HIGH")
+        result = match.get("result")
+        scores = _scores(match)
+        ours = labels.our_score(scores[0], scores[1], bool(match.get("is_home"))) if scores else None
+        tiles = [
+            {"value": ours or "-", "label": labels.RESULT_LABELS.get(result or "", "Marcador"),
+             "tone": {"WIN": "good", "LOSS": "bad", "DRAW": "warn"}.get(result or "")},
+            {"value": str(len(issues)), "label": f"Posibles problemas ({high} de severidad alta)" if issues
+             else "Posibles problemas", "tone": "bad" if high else ("warn" if issues else "good")},
+            {"value": str(len(self.snapshot.get("strengths") or [])), "label": "Fortalezas", "tone": "good"},
+            {"value": str(len(self.snapshot.get("tactical_indicators") or [])), "label": "Indicadores medidos"},
+        ]
+        return {"kind": "summary", "tiles": tiles}
+
     def content_blocks(self) -> list[dict]:
-        blocks: list[dict] = []
+        blocks: list[dict] = [self.summary()]
         if self.snapshot.get("match"):
-            blocks += [{"kind": "heading", "text": "Partido"}, _match_facts(self.snapshot["match"])]
-        events = self.snapshot.get("events") or []
-        if events:
-            blocks += [{"kind": "heading", "text": "Eventos del partido"},
-                       {"kind": "table", "columns": ["Minuto", "Evento", "Zona", "Resultado"], "widths": [1, 2, 2, 2],
-                        "rows": [[f"{e['minute']}'", labels.event_label(e["type"]), labels.event_label(e.get("zone")),
-                                  labels.event_label(e.get("result"))] for e in events]}]
+            blocks += [{"kind": "heading", "text": "Partido"},
+                       _match_facts(self.snapshot["match"], self.snapshot.get("team", {}).get("name", "Nuestro equipo"))]
 
         analysis = self.snapshot.get("analysis")
         if analysis:
@@ -325,7 +354,9 @@ class MatchReportView(ReportView):
             if simulated:
                 blocks.append({"kind": "notice", "text": "MODO SIMULACIÓN: datos sintéticos, no es un análisis de video real."})
 
-        issues = self.snapshot.get("possible_issues") or []
+        severity_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+        issues = sorted(self.snapshot.get("possible_issues") or [],
+                        key=lambda issue: (severity_order.get(issue["severity"], 3), -issue["confidence"]))
         recommendations = {r["issue"]: r["recommendation"] for r in self.snapshot.get("ai_recommendations", [])}
         if analysis is not None:
             blocks.append({"kind": "heading", "text": "Posibles problemas tácticos"})
@@ -368,6 +399,13 @@ class MatchReportView(ReportView):
                                                 "considera un posible riesgo."},
                        {"kind": "table", "columns": ["Indicador", "Equipo", "Valor", "Umbral", "Estado"],
                         "widths": [3.8, 1.5, 3.2, 1.1, 1.1], "rows": rows}]
+
+        events = self.snapshot.get("events") or []
+        if events:
+            blocks += [{"kind": "heading", "text": "Eventos del partido"},
+                       {"kind": "table", "columns": ["Minuto", "Evento", "Zona", "Resultado"], "widths": [1, 2, 2, 2],
+                        "rows": [[f"{e['minute']}'", labels.event_label(e["type"]), labels.event_label(e.get("zone")),
+                                  labels.event_label(e.get("result"))] for e in events]}]
         return blocks
 
 
@@ -423,11 +461,11 @@ EXPORTERS = {"json": JsonExporter, "csv": CsvExporter, "pdf": PdfExporter}
 FILE_LABELS = {"MATCH": "partido", "VIDEO_ANALYSIS": "analisis", "TEAM_EVOLUTION": "evolucion"}
 
 
-def export_report(report: Report, export_format: str) -> tuple[str | bytes, str, str]:
+def export_report(report: Report, export_format: str, crest: bytes | None = None) -> tuple[str | bytes, str, str]:
     exporter_class = EXPORTERS.get(export_format)
     if exporter_class is None:
         raise ReportError(f"Unsupported format '{export_format}'. Use: {', '.join(EXPORTERS)}", "UNSUPPORTED_EXPORT_FORMAT")
     exporter = exporter_class()
-    view = VIEWS[report.report_type](json.loads(report.snapshot_data), exporter, {"version": report.version})
+    view = VIEWS[report.report_type](json.loads(report.snapshot_data), exporter, {"version": report.version, "crest": crest})
     file_name = f"reporte_{FILE_LABELS.get(report.report_type, 'tactivision')}_v{report.version}.{exporter.extension}"
     return view.export(), exporter.media_type, file_name
