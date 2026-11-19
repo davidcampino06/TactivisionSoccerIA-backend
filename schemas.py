@@ -631,8 +631,9 @@ class RecommendationOut(ORMModel):
     notes: list[NoteOut] = []
     # The issue in football words and a real frame that shows it (stored as JSON, migration 0013).
     explanation: dict[str, Any] | None = None
-    # A training exercise to work on this kind of issue (fixed catalogue, services/training_drills.py).
-    drill: dict[str, Any] | None = None
+    # Training exercises to work on this kind of issue, the main one first (fixed catalogue,
+    # services/training_drills.py).
+    drills: list[dict[str, Any]] = []
 
     @field_validator("explanation", mode="before")
     @classmethod
@@ -645,10 +646,10 @@ class RecommendationOut(ORMModel):
         return value
 
     @model_validator(mode="after")
-    def _suggest_drill(self) -> "RecommendationOut":
-        from services.training_drills import drill_for  # local import: schemas stay free of services at import time
-        if self.drill is None:
-            self.drill = drill_for(self.title)
+    def _suggest_drills(self) -> "RecommendationOut":
+        from services.training_drills import drills_for  # local import: schemas stay free of services at import time
+        if not self.drills:
+            self.drills = drills_for(self.title)
         return self
 
 
