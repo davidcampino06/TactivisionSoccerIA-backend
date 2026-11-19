@@ -7,7 +7,7 @@ import re
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 class ORMModel(BaseModel):
@@ -631,6 +631,8 @@ class RecommendationOut(ORMModel):
     notes: list[NoteOut] = []
     # The issue in football words and a real frame that shows it (stored as JSON, migration 0013).
     explanation: dict[str, Any] | None = None
+    # A training exercise to work on this kind of issue (fixed catalogue, services/training_drills.py).
+    drill: dict[str, Any] | None = None
 
     @field_validator("explanation", mode="before")
     @classmethod
@@ -641,6 +643,13 @@ class RecommendationOut(ORMModel):
             except ValueError:
                 return None
         return value
+
+    @model_validator(mode="after")
+    def _suggest_drill(self) -> "RecommendationOut":
+        from services.training_drills import drill_for  # local import: schemas stay free of services at import time
+        if self.drill is None:
+            self.drill = drill_for(self.title)
+        return self
 
 
 class StrengthOut(ORMModel):
