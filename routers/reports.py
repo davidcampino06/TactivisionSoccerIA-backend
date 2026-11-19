@@ -12,6 +12,7 @@ from models import Match, Report, User
 from schemas import ReportCreate, ReportDetailOut, ReportOut
 from services.match_timeline import ComparisonError
 from services.reports import ReportDirector, ReportError, export_report, save_report
+from services.team_crest import crest_bytes
 
 router = APIRouter(prefix="/api", tags=["Reports"])
 
@@ -89,7 +90,8 @@ def export(report_id: str, format: str = Query(default="json"), user: User = Dep
            db: Session = Depends(get_db)):
     report = load_report(db, report_id, user, AccessLevel.READ)
     try:
-        content, media_type, file_name = export_report(report, format.lower())
+        crest = crest_bytes(db, report.team_id) if format.lower() == "pdf" else None
+        content, media_type, file_name = export_report(report, format.lower(), crest)
     except ReportError as error:
         raise domain_error(error, status.HTTP_400_BAD_REQUEST) from error
     return Response(content, media_type=media_type,
