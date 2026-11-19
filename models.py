@@ -216,6 +216,8 @@ class Video(Base):
     # Tactical situation the clip shows, chosen by a person (migration 0020); NULL: not classified.
     situation: Mapped[str | None] = mapped_column(String(30), nullable=True)
     situation_note: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Name written by the staff when the situation is OTHER (migration 0035), up to 30 characters.
+    situation_custom: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
 
 class VideoAnalysis(Base):
